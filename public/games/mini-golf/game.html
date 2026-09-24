@@ -235,6 +235,7 @@
     button: 'Tee off', onAction: newRound, hint: 'Mouse · Touch',
   });
   loadHole(0);
+  if (VT.preview) setTimeout(function () { drag = { sx: ball.x, sy: ball.y, x: ball.x - 190, y: ball.y + 30 }; draw(); }, 100);
   VT.ready();
 })();
 </script>

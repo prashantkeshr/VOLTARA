@@ -128,6 +128,7 @@
     sub: 'Five rounds. Wait for the core to turn lime, then react instantly. Pressing early is a false start.',
     button: 'Begin test', onAction: start, hint: 'Space · Click · Tap',
   });
+  if (VT.preview) setTimeout(function () { state = 'go'; goAt = performance.now(); set('go', 'NOW', ''); }, 100);
   VT.ready();
 })();
 </script>

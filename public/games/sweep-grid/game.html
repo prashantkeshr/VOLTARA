@@ -185,6 +185,7 @@
 
   newGame('easy');
   menu();
+  if (VT.preview) setTimeout(function () { VT.hide(ov); reveal(40); }, 50);
   VT.ready();
 })();
 </script>

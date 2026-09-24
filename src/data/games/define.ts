@@ -35,6 +35,8 @@ export function original(g: Pick<Game, Required> & Partial<Game>): Game {
     url: `games/${g.slug}/game.html`,
     embedAllowed: true,
     status: 'live',
+    // Real gameplay capture (npm run thumbs); GameArt falls back to procedural SVG.
+    thumbnail: `images/games/${g.slug}.jpg`,
     ...g,
   };
 }
@@ -48,6 +50,7 @@ export function upcoming(g: Pick<Game, Required> & Partial<Game>): Game {
     embedAllowed: false,
     curatedRank: 500,
     releaseDate: '2026-12-01',
+    thumbnail: undefined,
     ...g,
   });
 }

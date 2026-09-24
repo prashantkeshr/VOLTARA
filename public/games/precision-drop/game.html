@@ -156,6 +156,7 @@
     sub: 'Release the payload so it lands on the moving pad. The lime centre scores triple. Ten drops, and everything gets faster.',
     button: 'Start', onAction: start, hint: 'Space · Click · Tap',
   });
+  if (VT.preview) setTimeout(release, 900);
   VT.ready();
 })();
 </script>

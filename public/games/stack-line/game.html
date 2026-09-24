@@ -164,6 +164,10 @@
     sub: 'Drop the sliding block onto the tower. Overhang is sliced off. Perfect drops keep your width — four in a row grow it back.',
     button: 'Start', onAction: start, hint: 'Space · Click · Tap',
   });
+  if (VT.preview) { var pv = 0, pvT = setInterval(function () {
+    if (!s || s.over || ++pv > 11) return clearInterval(pvT);
+    var t = s.blocks[s.blocks.length - 1]; s.cur.x = t.x + (Math.random() - 0.5) * 0.1; drop();
+  }, 90); }
   VT.ready();
 })();
 </script>

@@ -7,6 +7,8 @@ export interface PageMeta {
   description: string;
   path: string;
   type?: 'website' | 'game';
+  /** Public path of a preview image, e.g. images/games/neon-grid.jpg */
+  image?: string;
 }
 
 export const SITE_TITLE = 'VOLTARA — Enter the Game';
@@ -19,6 +21,7 @@ export function gameMeta(g: Game): PageMeta {
     description: `${g.tagline} ${categoryName(g.category)} game${g.type === 'COMING_SOON' ? ' coming to VOLTARA' : ' — instant play, no download, no account'}.`,
     path: `/games/${g.slug}`,
     type: 'game',
+    image: g.thumbnail,
   };
 }
 

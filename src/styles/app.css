@@ -1691,3 +1691,26 @@ kbd {
 .loader__brand path {
   fill: #c8ff2e;
 }
+
+/* Game artwork: real screenshot over procedural SVG fallback. */
+.art {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #0c0e10;
+}
+.art > .art__svg,
+.art > .art__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.art__img {
+  opacity: 0;
+  transition: opacity 240ms var(--ease);
+}
+.art__img.is-loaded {
+  opacity: 1;
+}

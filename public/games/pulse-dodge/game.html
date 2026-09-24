@@ -151,6 +151,7 @@
   loop = VT.loop(update, draw);
 
   function die() {
+    if (VT.preview) return;
     s.dead = true; loop.stop();
     VT.beep(100, 0.4, 'sawtooth', 0.08);
     for (var i = 0; i < 30; i++) { var t = Math.random() * 6.28, v = VT.rand(60, 300); s.parts.push({ x: s.x, y: s.y, vx: Math.cos(t) * v, vy: Math.sin(t) * v, life: VT.rand(0.3, 0.8), c: '#c8ff2e' }); }

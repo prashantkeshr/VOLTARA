@@ -118,6 +118,7 @@
   loop = VT.loop(update, draw);
 
   function crash() {
+    if (VT.preview) return;
     s.dead = true; loop.stop(); draw();
     VT.beep(90, 0.4, 'sawtooth', 0.08);
     var score = Math.floor(s.score), r = VT.submit(score);

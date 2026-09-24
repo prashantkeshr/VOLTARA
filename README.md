@@ -5,6 +5,7 @@
 - React 18 + TypeScript + Vite, React Router, Lucide icons, plain CSS design tokens
 - No backend, no database, no accounts. Favorites, history, preferences and reports live in `localStorage` / IndexedDB
 - 17 playable **VOLTARA Originals** (vanilla HTML5, zero dependencies), plus a scalable catalog of upcoming titles
+- Every game card shows a real gameplay screenshot (`npm run thumbs` regenerates them with headless Chrome); procedural SVG art is the automatic fallback
 - Universal game player with Focus Mode, Fullscreen API, reload, external fallback, failure detection and problem reports
 - PWA: installable, offline app shell, Originals cached for offline play
 - Static SEO: every route and every game gets its own pre-generated `index.html` with unique title, description, Open Graph and JSON-LD

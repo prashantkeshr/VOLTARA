@@ -211,6 +211,7 @@
 
   new ResizeObserver(fit).observe(stage);
   newGame();
+  if (VT.preview) { var pv = 0, dirs = ['left', 'down', 'right', 'down'], pvT = setInterval(function () { if (++pv > 28) return clearInterval(pvT); move(dirs[pv % 4]); }, 60); }
   VT.ready();
 })();
 </script>

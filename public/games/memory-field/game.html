@@ -157,6 +157,13 @@
 
   deal(4);
   menu();
+  if (VT.preview) setTimeout(function () {
+    var done = {};
+    cards.forEach(function (c) { if (Object.keys(done).length < 3 || done[c.k.label]) { done[c.k.label] = 1; } });
+    cards.forEach(function (c) { if (done[c.k.label]) { c.done = true; c.el.classList.add('done'); } });
+    var hidden = cards.filter(function (c) { return !c.done; });
+    if (hidden[0]) hidden[0].el.classList.add('open');
+  }, 50);
   VT.ready();
 })();
 </script>

@@ -151,6 +151,7 @@
   var loop = VT.loop(update, draw);
 
   function die() {
+    if (VT.preview) return;
     s.dead = true;
     burst(s.x, view.h - 70 * unit(), '#c8ff2e', 28);
     VT.beep(110, 0.35, 'sawtooth', 0.07);

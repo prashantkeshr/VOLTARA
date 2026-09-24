@@ -156,6 +156,7 @@
     hint: 'Click · Tap · Arrows + Enter',
   });
   level = 1; generate();
+  if (VT.preview) setTimeout(function () { VT.hide(ov); }, 50);
   VT.ready();
 })();
 </script>

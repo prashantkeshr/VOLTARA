@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import type { Game } from '../types/game';
 import { asset } from '../lib/format';
 
@@ -238,10 +238,33 @@ interface Props {
   decorative?: boolean;
 }
 
-export const GameArt = memo(function GameArt({ game, className, decorative = true }: Props) {
-  if (game.thumbnail) {
-    return <img className={className} src={asset(game.thumbnail)} alt={decorative ? '' : `${game.title} artwork`} loading="lazy" decoding="async" />;
-  }
+/**
+ * Shows the game's own screenshot when it has one, layered over the
+ * procedural SVG. The SVG is visible while the image loads and remains the
+ * artwork if the image is missing or fails.
+ */
+export const GameArt = memo(function GameArt({ game, className = '', decorative = true }: Props) {
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const svg = <ProceduralArt game={game} decorative={decorative || Boolean(game.thumbnail && !failed)} />;
+  if (!game.thumbnail || failed) return <span className={`art ${className}`}>{svg}</span>;
+  return (
+    <span className={`art ${className}`}>
+      {svg}
+      <img
+        className={`art__img${loaded ? ' is-loaded' : ''}`}
+        src={asset(game.thumbnail)}
+        alt={decorative ? '' : `${game.title} gameplay`}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+      />
+    </span>
+  );
+});
+
+function ProceduralArt({ game, decorative }: { game: Game; decorative: boolean }) {
   const h = game.art.hue;
   const a = `hsl(${h} 95% 62%)`;
   const a2 = `hsl(${(h + 140) % 360} 80% 68%)`;
@@ -249,7 +272,7 @@ export const GameArt = memo(function GameArt({ game, className, decorative = tru
   const id = `g-${game.slug}`;
   return (
     <svg
-      className={className}
+      className="art__svg"
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid slice"
       role={decorative ? undefined : 'img'}
@@ -272,4 +295,4 @@ export const GameArt = memo(function GameArt({ game, className, decorative = tru
       <g>{pattern(game, a, a2, dim)}</g>
     </svg>
   );
-});
+}

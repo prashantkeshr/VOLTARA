@@ -159,6 +159,7 @@
     sub: 'Hit the lit cell before it fades. Avoid violet decoys. 30 seconds on the clock — every hit buys time.',
     button: 'Start', onAction: start, hint: 'Mouse · Touch',
   });
+  if (VT.preview) setTimeout(function () { s.level = 6; s.hits = 41; s.score = 1480; s.streak = 12; spawn(); hud(); }, 60);
   VT.ready();
 })();
 </script>

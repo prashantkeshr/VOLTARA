@@ -74,6 +74,7 @@ export function staticPages(siteUrl: string): Plugin {
         const head = [
           url ? `<link rel="canonical" href="${url}" />` : '',
           url ? `<meta property="og:url" content="${url}" />` : '',
+          origin && p.image ? `<meta property="og:image" content="${origin}${link('/' + p.image)}" />` : '',
           p.jsonLd ? `<script type="application/ld+json" data-voltara="game">${JSON.stringify(p.jsonLd).replace(/</g, '\\u003c')}</script>` : '',
         ].join('\n    ');
         return template
@@ -84,6 +85,7 @@ export function staticPages(siteUrl: string): Plugin {
           .replace(/(<meta name="twitter:title" content=")[^"]*/, `$1${esc(p.title)}`)
           .replace(/(<meta name="twitter:description" content=")[^"]*/, `$1${esc(p.description)}`)
           .replace(/(<meta property="og:type" content=")[^"]*/, `$1website`)
+          .replace(/(<meta name="twitter:card" content=")[^"]*/, `$1${p.image ? 'summary_large_image' : 'summary'}`)
           .replace('<!--voltara:head-->', head)
           .replace('<div id="root"></div>', `<div id="root"><div class="prerender">${p.body.replace(/href="\//g, `href="${link('/')}`)}</div></div>`);
       };

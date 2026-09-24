@@ -15,7 +15,10 @@
     sound: true,
     reducedMotion: window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches,
     keys: new Set(),
+    /** ?preview=1: used to capture catalog thumbnails. Skips the intro card, starts play, stays silent. */
+    preview: /[?&]preview=1/.test(location.search),
   };
+  var introSkipped = false;
 
   function post(msg) {
     if (embedded) {
@@ -82,7 +85,7 @@
   // ── Audio ────────────────────────────────────────────────────
   var actx = null;
   VT.beep = function (freq, dur, type, vol) {
-    if (!VT.sound) return;
+    if (!VT.sound || VT.preview) return;
     try {
       actx = actx || new (window.AudioContext || window.webkitAudioContext)();
       if (actx.state === 'suspended') actx.resume();
@@ -126,6 +129,7 @@
     var raf = 0;
     var last = 0;
     var running = false;
+    var warmed = false;
     function frame(t) {
       if (!running) return;
       var dt = Math.min(0.05, (t - last) / 1000 || 0);
@@ -138,6 +142,12 @@
       start: function () {
         if (running) return;
         running = true;
+        // Preview captures: simulate ~6 s up front so thumbnails show a game in progress.
+        if (VT.preview && !warmed) {
+          warmed = true;
+          for (var i = 0; i < 360 && running; i++) update(1 / 60);
+          if (render) render();
+        }
         last = performance.now();
         raf = requestAnimationFrame(frame);
       },
@@ -152,6 +162,11 @@
   // ── Overlay ──────────────────────────────────────────────────
   /** opts: { eyebrow, title, sub, stats: [[label, value]], button, onAction, hint, secondary: {label, onAction} } */
   VT.overlay = function (el, opts) {
+    if (VT.preview) {
+      el.hidden = true;
+      if (!introSkipped) { introSkipped = true; if (opts.onAction) setTimeout(opts.onAction, 0); }
+      return;
+    }
     var html = '<div class="vt-card">';
     if (opts.eyebrow) html += '<div class="vt-eyebrow">' + opts.eyebrow + '</div>';
     html += '<h1 class="vt-title">' + opts.title + '</h1>';

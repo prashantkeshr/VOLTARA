@@ -151,6 +151,7 @@
     sub: 'Select tiles that add up exactly to the target. Every solve adds 2 seconds. Overshoot and your selection resets.',
     button: 'Start', onAction: start, hint: 'Click · Tap',
   });
+  if (VT.preview) setTimeout(function () { s.sel = [1, 6]; render(); }, 100);
   VT.ready();
 })();
 </script>
