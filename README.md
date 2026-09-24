@@ -25,6 +25,7 @@ npm run preview    # serve dist/ locally (service worker active)
 | Host | Notes |
 | --- | --- |
 | **Cloudflare Pages / Netlify / Vercel** | Build command `npm run build`, output `dist` |
+| **GitHub Pages (live: voltara.dhurta.com)** | Pushing to `main` deploys via `.github/workflows/deploy.yml`; `public/CNAME` sets the domain |
 | **GitHub Pages (project site)** | Build with `VITE_BASE=/<repo>/ npm run build` and publish `dist/` |
 | **Any static host** | Upload `dist/` |
 
@@ -32,7 +33,7 @@ npm run preview    # serve dist/ locally (service worker active)
 
 | Variable | Purpose |
 | --- | --- |
-| `VITE_SITE_URL` | Absolute origin (e.g. `https://voltara.gg`). Enables canonical URLs, `og:url`, `sitemap.xml` |
+| `VITE_SITE_URL` | Absolute origin, set in `.env.production` to `https://voltara.dhurta.com`. Enables canonical URLs, `og:url`, `sitemap.xml` |
 | `VITE_BASE` | Base path for sub-directory hosting |
 | `VITE_ADS_MODE` | `placeholder` (default), `off`, or `provider` |
 | `VITE_REPORT_ENDPOINT` | If set, problem reports are also POSTed here as JSON |

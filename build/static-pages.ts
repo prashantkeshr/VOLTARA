@@ -117,7 +117,7 @@ export function staticPages(siteUrl: string): Plugin {
       // Route HTML stays out (the SPA shell serves every route offline); game HTML goes in.
       const precache = walk(out)
         .map((f) => relative(out, f).split(sep).join('/'))
-        .filter((f) => f !== 'sw.js' && f !== '404.html' && !f.endsWith('.map'))
+        .filter((f) => !['sw.js', '404.html', 'CNAME', '.nojekyll'].includes(f) && !f.endsWith('.map'))
         .filter((f) => !f.endsWith('.html') || f === 'index.html' || /^games\/[^/]+\/game\.html$/.test(f));
       const swSource = readFileSync(swPath, 'utf8');
       const version = createHash('sha1').update(precache.join('|') + template + swSource).digest('hex').slice(0, 10);
