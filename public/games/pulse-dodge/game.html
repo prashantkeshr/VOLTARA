@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Pulse Dodge — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Pulse Dodge arena"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Survived</b><span id="time">0.0s</span></div>
+      <div class="vt-stat"><b>Wave</b><span id="wave">1</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { time: VT.$('#time'), wave: VT.$('#wave'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop || !loop.running) draw(); });
+  var ctx = view.ctx, loop = null, s = null, target = null;
+
+  function arena() { var R = Math.min(view.w, view.h) * 0.44; return { x: view.w / 2, y: view.h / 2 + 12, R: R, u: R / 300 }; }
+
+  function reset() {
+    var a = arena();
+    s = { t: 0, x: a.x, y: a.y, bullets: [], rings: [], emit: 1.2, ringT: 5, wave: 1, dead: false, trail: [], parts: [] };
+    target = null;
+  }
+
+  function spawnVolley() {
+    var a = arena(), wave = s.wave;
+    var kind = Math.random();
+    var ang = Math.random() * Math.PI * 2;
+    var ex = a.x + Math.cos(ang) * a.R, ey = a.y + Math.sin(ang) * a.R;
+    var aim = Math.atan2(s.y - ey, s.x - ex);
+    var spd = (150 + wave * 14) * a.u;
+    if (kind < 0.45) {
+      // Aimed spread
+      var n = 3 + Math.min(4, wave >> 1);
+      for (var i = 0; i < n; i++) { var off = (i - (n - 1) / 2) * 0.16; s.bullets.push({ x: ex, y: ey, vx: Math.cos(aim + off) * spd, vy: Math.sin(aim + off) * spd, r: 5 * a.u, c: '#ff5c5c' }); }
+    } else if (kind < 0.75) {
+      // Seeker (slow homing)
+      s.bullets.push({ x: ex, y: ey, vx: Math.cos(aim) * spd * 0.6, vy: Math.sin(aim) * spd * 0.6, r: 7 * a.u, c: '#8b7dff', seek: 2.6 + wave * 0.1, life: 5 });
+    } else {
+      // Radial burst from a random interior point
+      var bx = a.x + VT.rand(-0.5, 0.5) * a.R, by = a.y + VT.rand(-0.5, 0.5) * a.R;
+      if (Math.hypot(bx - s.x, by - s.y) < 90 * a.u) { bx = a.x - (s.x - a.x); by = a.y - (s.y - a.y); }
+      var m = 10 + Math.min(10, wave);
+      for (var j = 0; j < m; j++) { var t = (j / m) * Math.PI * 2; s.bullets.push({ x: bx, y: by, vx: Math.cos(t) * spd * 0.7, vy: Math.sin(t) * spd * 0.7, r: 4.5 * a.u, c: '#ffb547', delay: 0.55 }); }
+    }
+  }
+
+  function update(dt) {
+    var a = arena();
+    s.t += dt;
+    s.wave = 1 + Math.floor(s.t / 10);
+    // Movement
+    var mv = 360 * a.u, dx = 0, dy = 0;
+    if (VT.keys.has('KeyA') || VT.keys.has('ArrowLeft')) dx--;
+    if (VT.keys.has('KeyD') || VT.keys.has('ArrowRight')) dx++;
+    if (VT.keys.has('KeyW') || VT.keys.has('ArrowUp')) dy--;
+    if (VT.keys.has('KeyS') || VT.keys.has('ArrowDown')) dy++;
+    if (dx || dy) { var l = Math.hypot(dx, dy); s.x += dx / l * mv * dt; s.y += dy / l * mv * dt; target = null; }
+    else if (target) {
+      var tx = target.x - s.x, ty = target.y - s.y, d = Math.hypot(tx, ty);
+      if (d > 1) { var step = Math.min(d, mv * 1.25 * dt); s.x += tx / d * step; s.y += ty / d * step; }
+    }
+    var ddx = s.x - a.x, ddy = s.y - a.y, dd = Math.hypot(ddx, ddy), lim = a.R - 10 * a.u;
+    if (dd > lim) { s.x = a.x + ddx / dd * lim; s.y = a.y + ddy / dd * lim; }
+    s.trail.push([s.x, s.y]); if (s.trail.length > 14) s.trail.shift();
+
+    s.emit -= dt;
+    if (s.emit <= 0) { spawnVolley(); s.emit = Math.max(0.35, 1.3 - s.wave * 0.09) * VT.rand(0.7, 1.2); }
+    s.ringT -= dt;
+    if (s.ringT <= 0 && s.wave >= 2) {
+      // Expanding ring with a gap — find the gap.
+      s.rings.push({ r: 0, gap: Math.random() * Math.PI * 2, gw: Math.max(0.55, 1.1 - s.wave * 0.04), spd: (110 + s.wave * 6) * a.u });
+      s.ringT = Math.max(3.5, 8 - s.wave * 0.4);
+    }
+
+    var pr = 7 * a.u;
+    for (var i = s.bullets.length - 1; i >= 0; i--) {
+      var b = s.bullets[i];
+      if (b.delay > 0) { b.delay -= dt; continue; }
+      if (b.seek) {
+        b.life -= dt;
+        var ang = Math.atan2(s.y - b.y, s.x - b.x), cur = Math.atan2(b.vy, b.vx), sp = Math.hypot(b.vx, b.vy);
+        var diff = Math.atan2(Math.sin(ang - cur), Math.cos(ang - cur));
+        cur += VT.clamp(diff, -b.seek * dt, b.seek * dt);
+        b.vx = Math.cos(cur) * sp; b.vy = Math.sin(cur) * sp;
+        if (b.life <= 0) { s.bullets.splice(i, 1); continue; }
+      }
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (Math.hypot(b.x - a.x, b.y - a.y) > a.R + 30) { s.bullets.splice(i, 1); continue; }
+      if (Math.hypot(b.x - s.x, b.y - s.y) < b.r + pr * 0.8) { die(); return; }
+    }
+    for (var k = s.rings.length - 1; k >= 0; k--) {
+      var rg = s.rings[k];
+      rg.r += rg.spd * dt;
+      if (rg.r > a.R + 10) { s.rings.splice(k, 1); continue; }
+      var pd = Math.hypot(s.x - a.x, s.y - a.y);
+      if (Math.abs(pd - rg.r) < pr + 2) {
+        var pa = Math.atan2(s.y - a.y, s.x - a.x);
+        var gd = Math.abs(Math.atan2(Math.sin(pa - rg.gap), Math.cos(pa - rg.gap)));
+        if (gd > rg.gw / 2) { die(); return; }
+      }
+    }
+    el.time.textContent = s.t.toFixed(1) + 's';
+    el.wave.textContent = s.wave;
+  }
+
+  function draw() {
+    var a = arena(), w = view.w, h = view.h;
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, w, h);
+    // Arena
+    ctx.strokeStyle = '#25292e'; ctx.lineWidth = 1;
+    for (var r = a.R / 4; r < a.R; r += a.R / 4) { ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, 6.283); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(a.x - a.R, a.y); ctx.lineTo(a.x + a.R, a.y); ctx.moveTo(a.x, a.y - a.R); ctx.lineTo(a.x, a.y + a.R); ctx.stroke();
+    ctx.strokeStyle = '#3ee6ff'; ctx.lineWidth = 2; ctx.shadowColor = 'rgba(62,230,255,.5)'; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.R, 0, 6.283); ctx.stroke(); ctx.shadowBlur = 0;
+    if (!s) return;
+    // Rings
+    s.rings.forEach(function (rg) {
+      ctx.strokeStyle = 'rgba(255,92,92,0.85)'; ctx.lineWidth = 4 * a.u;
+      ctx.beginPath(); ctx.arc(a.x, a.y, rg.r, rg.gap + rg.gw / 2, rg.gap - rg.gw / 2 + Math.PI * 2); ctx.stroke();
+    });
+    // Bullets
+    s.bullets.forEach(function (b) {
+      ctx.fillStyle = b.c;
+      if (b.delay > 0) { ctx.globalAlpha = 0.25 + (0.55 - b.delay); ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2.2 * (b.delay + 0.3), 0, 6.283); ctx.strokeStyle = b.c; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; return; }
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.fill();
+    });
+    // Particles
+    s.parts.forEach(function (p) { ctx.globalAlpha = Math.max(0, p.life * 1.6); ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 3, 3); });
+    ctx.globalAlpha = 1;
+    if (!s.dead) {
+      s.trail.forEach(function (p, i) { ctx.fillStyle = 'rgba(200,255,46,' + (i / s.trail.length) * 0.25 + ')'; ctx.beginPath(); ctx.arc(p[0], p[1], 7 * a.u * (i / s.trail.length), 0, 6.283); ctx.fill(); });
+      ctx.fillStyle = '#c8ff2e'; ctx.shadowColor = 'rgba(200,255,46,.8)'; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 7 * a.u, 0, 6.283); ctx.fill(); ctx.shadowBlur = 0;
+    }
+  }
+
+  loop = VT.loop(update, draw);
+
+  function die() {
+    s.dead = true; loop.stop();
+    VT.beep(100, 0.4, 'sawtooth', 0.08);
+    for (var i = 0; i < 30; i++) { var t = Math.random() * 6.28, v = VT.rand(60, 300); s.parts.push({ x: s.x, y: s.y, vx: Math.cos(t) * v, vy: Math.sin(t) * v, life: VT.rand(0.3, 0.8), c: '#c8ff2e' }); }
+    var t0 = performance.now();
+    (function fx() {
+      s.parts.forEach(function (p) { p.x += p.vx / 60; p.y += p.vy / 60; p.life -= 1 / 60; });
+      draw();
+      if (performance.now() - t0 < 600) requestAnimationFrame(fx); else end();
+    })();
+  }
+
+  function end() {
+    var tenths = Math.floor(s.t * 10);
+    var r = VT.submit(tenths);
+    showBest();
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Signal lost',
+      title: (tenths / 10).toFixed(1) + 's',
+      stats: [['Wave', s.wave], ['Best', (r.best / 10).toFixed(1) + 's', true]],
+      button: 'Try again', onAction: start, hint: 'Space to restart',
+    });
+  }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : (b / 10).toFixed(1) + 's'; }
+  function start() { VT.hide(ov); reset(); loop.start(); }
+
+  function setTarget(e) { var r = canvas.getBoundingClientRect(); target = { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  canvas.addEventListener('pointerdown', function (e) { setTarget(e); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', function (e) { if (e.pointerType === 'mouse' || e.buttons) setTarget(e); });
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+    if (e.code === 'KeyP') pause();
+  });
+  function pause() {
+    if (!loop.running) return;
+    loop.stop();
+    VT.overlay(ov, { eyebrow: 'Paused', title: 'Pulse Dodge', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } });
+  }
+  VT.onPause(pause);
+
+  showBest();
+  draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Pulse Dodge',
+    sub: 'Survive the arena. Red spreads, violet seekers, amber bursts and expanding rings — find the gap. Waves escalate every 10 seconds.',
+    button: 'Enter arena', onAction: start, hint: 'Mouse · Touch drag · WASD',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

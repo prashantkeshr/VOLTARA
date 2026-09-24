@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Signal Switch — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .board { display: grid; width: var(--size); aspect-ratio: 1; border: 1px solid var(--line); border-radius: 6px; background: #0b0c0e; overflow: hidden; }
+  .tile { border: 0; padding: 0; background: none; border-right: 1px solid rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.03); position: relative; }
+  .tile:hover { background: rgba(255,255,255,.025); }
+  .tile svg { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform .16s cubic-bezier(.2,.7,.2,1); }
+  .tile .ln { stroke: #353b42; stroke-width: 9; stroke-linecap: round; fill: none; transition: stroke .15s; }
+  .tile.on .ln { stroke: #c8ff2e; filter: drop-shadow(0 0 4px rgba(200,255,46,.6)); }
+  .tile .node { fill: #0b0c0e; stroke: #5d656d; stroke-width: 5; }
+  .tile.on .node { stroke: #c8ff2e; fill: rgba(200,255,46,.25); }
+  .tile .core { fill: #c8ff2e; }
+  .board.solved { border-color: #c8ff2e; box-shadow: 0 0 40px rgba(200,255,46,.15); }
+  .tile:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Network</b><span id="level">1</span></div>
+    <div class="vt-stat"><b>Powered</b><span id="pow">0/0</span></div>
+    <div class="vt-stat"><b>Moves</b><span id="moves">0</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    <button class="vt-btn vt-btn--sm" id="new">New</button>
+  </div>
+  <div class="vt-stage" id="stage">
+    <div class="vt-center"><div class="board" id="board" aria-label="Signal network"></div></div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var N = 1, E = 2, S = 4, W = 8;
+  var DIRS = [[N, 0, -1, S], [E, 1, 0, W], [S, 0, 1, N], [W, -1, 0, E]];
+  var board = VT.$('#board'), ov = VT.$('#ov'), stage = VT.$('#stage');
+  var el = { level: VT.$('#level'), pow: VT.$('#pow'), moves: VT.$('#moves'), best: VT.$('#best') };
+  var n, cells, rot, src, moves, level = 1, solved;
+
+  function fit() {
+    var r = stage.getBoundingClientRect();
+    board.style.setProperty('--size', Math.floor(Math.min(r.width - 24, r.height - 24, 680)) + 'px');
+  }
+  new ResizeObserver(fit).observe(stage);
+
+  function rotMask(m, k) { for (var i = 0; i < k; i++) m = ((m << 1) | (m >> 3)) & 15; return m; }
+  function sizeFor(l) { return l <= 2 ? 4 : l <= 5 ? 5 : l <= 9 ? 6 : 7; }
+
+  function generate() {
+    n = sizeFor(level);
+    var mask = new Array(n * n).fill(0), seen = new Array(n * n).fill(false);
+    src = ((n / 2) | 0) * n + ((n / 2) | 0);
+    // Randomised DFS spanning tree, biased away from long straight runs.
+    var stack = [src]; seen[src] = true;
+    while (stack.length) {
+      var cur = stack[stack.length - 1], x = cur % n, y = (cur / n) | 0;
+      var opts = VT.shuffle(DIRS.slice()).filter(function (d) {
+        var nx = x + d[1], ny = y + d[2];
+        return nx >= 0 && ny >= 0 && nx < n && ny < n && !seen[ny * n + nx];
+      });
+      if (!opts.length) { stack.pop(); continue; }
+      var d = opts[0], nb = (y + d[2]) * n + x + d[1];
+      mask[cur] |= d[0]; mask[nb] |= d[3]; seen[nb] = true;
+      stack.push(nb);
+      if (Math.random() < 0.35) stack.splice(VT.randInt(0, stack.length - 1), 0, stack.pop());
+    }
+    cells = mask;
+    rot = mask.map(function () { return VT.randInt(0, 3); });
+    // Make sure it doesn't start solved.
+    if (powered().count === n * n) rot[src] = (rot[src] + 1) % 4;
+    moves = 0; solved = false;
+    build();
+  }
+
+  function current(i) { return rotMask(cells[i], rot[i]); }
+
+  function powered() {
+    var on = new Array(n * n).fill(false), q = [src]; on[src] = true; var count = 1;
+    while (q.length) {
+      var c = q.shift(), x = c % n, y = (c / n) | 0, m = current(c);
+      DIRS.forEach(function (d) {
+        if (!(m & d[0])) return;
+        var nx = x + d[1], ny = y + d[2];
+        if (nx < 0 || ny < 0 || nx >= n || ny >= n) return;
+        var nb = ny * n + nx;
+        if (!on[nb] && current(nb) & d[3]) { on[nb] = true; count++; q.push(nb); }
+      });
+    }
+    return { on: on, count: count };
+  }
+
+  function svgFor(i) {
+    var m = cells[i], p = '';
+    if (m & N) p += '<line class="ln" x1="50" y1="50" x2="50" y2="0"/>';
+    if (m & E) p += '<line class="ln" x1="50" y1="50" x2="100" y2="50"/>';
+    if (m & S) p += '<line class="ln" x1="50" y1="50" x2="50" y2="100"/>';
+    if (m & W) p += '<line class="ln" x1="50" y1="50" x2="0" y2="50"/>';
+    var deg = [N, E, S, W].filter(function (b) { return m & b; }).length;
+    if (i === src) p += '<circle class="core" cx="50" cy="50" r="18"/><circle cx="50" cy="50" r="7" fill="#0b0c0e"/>';
+    else if (deg === 1) p += '<rect class="node" x="32" y="32" width="36" height="36" rx="4"/>';
+    return '<svg viewBox="0 0 100 100" aria-hidden="true">' + p + '</svg>';
+  }
+
+  var tiles = [], turns = [];
+  function build() {
+    board.innerHTML = '';
+    board.classList.remove('solved');
+    board.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
+    tiles = []; turns = rot.slice();
+    for (var i = 0; i < n * n; i++) {
+      var b = document.createElement('button');
+      b.className = 'tile';
+      b.dataset.i = i;
+      b.innerHTML = svgFor(i);
+      board.appendChild(b);
+      tiles.push(b);
+    }
+    render();
+  }
+
+  function render() {
+    var p = powered();
+    for (var i = 0; i < n * n; i++) {
+      tiles[i].classList.toggle('on', p.on[i]);
+      tiles[i].firstChild.style.transform = 'rotate(' + turns[i] * 90 + 'deg)';
+      tiles[i].setAttribute('aria-label', (i === src ? 'Core' : 'Tile') + ' row ' + ((i / n | 0) + 1) + ' column ' + (i % n + 1) + (p.on[i] ? ', powered' : ''));
+    }
+    el.level.textContent = level; el.moves.textContent = moves;
+    el.pow.textContent = p.count + '/' + n * n;
+    var b = VT.getBest('level'); el.best.textContent = b === null ? '–' : 'Network ' + b;
+    return p.count;
+  }
+
+  function turn(i, dir) {
+    if (solved) return;
+    rot[i] = (rot[i] + dir + 4) % 4; turns[i] += dir; moves++;
+    VT.beep(dir > 0 ? 480 : 380, 0.03, 'triangle', 0.04);
+    if (render() === n * n) win();
+  }
+
+  function win() {
+    solved = true;
+    board.classList.add('solved');
+    VT.submit(level, { key: 'level' });
+    VT.beep(660, 0.1, 'triangle'); setTimeout(function () { VT.beep(1040, 0.18, 'triangle'); }, 120);
+    setTimeout(function () {
+      VT.overlay(ov, {
+        eyebrow: 'Signal routed', title: 'Network online',
+        stats: [['Network', level], ['Moves', moves, true]],
+        button: 'Next network', onAction: function () { VT.hide(ov); level++; generate(); }, hint: 'Enter for next',
+      });
+    }, 450);
+  }
+
+  board.addEventListener('click', function (e) { var t = e.target.closest('.tile'); if (t) turn(+t.dataset.i, 1); });
+  board.addEventListener('contextmenu', function (e) { var t = e.target.closest('.tile'); if (t) { e.preventDefault(); turn(+t.dataset.i, -1); } });
+  window.addEventListener('keydown', function (e) {
+    if (!ov.hidden && e.code === 'Enter') { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+  });
+  VT.$('#new').addEventListener('click', function () { generate(); });
+
+  var saved = VT.getBest('level');
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Signal Switch',
+    sub: 'Rotate conduits to route the signal from the core to every node. Click to rotate clockwise, right-click for counter-clockwise.',
+    button: saved ? 'Continue · Network ' + (saved + 1) : 'Start', onAction: function () { VT.hide(ov); level = saved ? saved + 1 : 1; generate(); },
+    secondary: saved ? { label: 'Restart at 1', onAction: function () { VT.hide(ov); level = 1; generate(); } } : null,
+    hint: 'Click · Tap · Right-click',
+  });
+  generate();
+  VT.ready();
+})();
+</script>
+</body>
+</html>

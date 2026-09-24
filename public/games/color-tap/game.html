@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Color Tap — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .wrap { display: grid; gap: clamp(20px, 5vh, 44px); justify-items: center; width: min(560px, 100%); }
+  .prompt { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; color: var(--muted); text-transform: uppercase; }
+  .word { font-family: var(--display); font-weight: 700; font-size: clamp(56px, 16vmin, 120px); letter-spacing: -.04em; line-height: 1; min-height: 1em; }
+  .word.flash-ok { animation: ok .25s; }
+  .word.flash-bad { animation: bad .3s; }
+  @keyframes ok { 50% { transform: scale(1.06); } }
+  @keyframes bad { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  .answers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; }
+  .ans { height: clamp(56px, 11vh, 80px); border-radius: 6px; border: 1px solid var(--line2); background: #111315; display: flex; align-items: center; justify-content: center; gap: 12px; font-weight: 700; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; transition: border-color .12s, transform .08s; }
+  .ans:hover { border-color: #5d656d; }
+  .ans:active { transform: scale(.97); }
+  .ans i { width: 14px; height: 14px; border-radius: 3px; }
+  .ans kbd { font-family: var(--mono); font-size: 10px; color: var(--dim); border: 1px solid var(--line2); border-radius: 3px; padding: 0 5px; }
+  .timebar { height: 3px; background: var(--line); }
+  .timebar i { display: block; height: 100%; background: var(--lime); }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+    <div class="vt-stat"><b>Streak</b><span id="streak">0</span></div>
+    <div class="vt-stat"><b>×</b><span id="mult">1</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Time</b><span id="time">30.0</span></div>
+    <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+  </div>
+  <div class="timebar"><i id="bar"></i></div>
+  <div class="vt-stage">
+    <div class="vt-center">
+      <div class="wrap">
+        <div class="prompt">Pick the ink colour</div>
+        <div class="word" id="word" aria-live="polite"></div>
+        <div class="answers" id="answers"></div>
+      </div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var START = 30;
+  var COLORS = [
+    { name: 'Lime', hex: '#c8ff2e' },
+    { name: 'Violet', hex: '#8b7dff' },
+    { name: 'Cyan', hex: '#3ee6ff' },
+    { name: 'Amber', hex: '#ffb547' },
+    { name: 'Red', hex: '#ff5c5c' },
+    { name: 'White', hex: '#eef0f2' },
+  ];
+  var word = VT.$('#word'), answers = VT.$('#answers'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), streak: VT.$('#streak'), mult: VT.$('#mult'), time: VT.$('#time'), best: VT.$('#best'), bar: VT.$('#bar') };
+  var s = null, ink = null, opts = [];
+
+  function mult() { return 1 + Math.min(4, Math.floor(s.streak / 5)); }
+
+  function round() {
+    var pool = VT.shuffle(COLORS.slice());
+    ink = pool[0];
+    var text = pool[1]; // always mismatched
+    opts = VT.shuffle([ink, text, pool[2], pool[3]]);
+    word.textContent = text.name.toUpperCase();
+    word.style.color = ink.hex;
+    word.setAttribute('aria-label', 'The word ' + text.name + ' written in ' + ink.name.toLowerCase() + ' ink');
+    answers.innerHTML = '';
+    opts.forEach(function (o, i) {
+      var b = document.createElement('button');
+      b.className = 'ans';
+      b.dataset.i = i;
+      b.innerHTML = '<i style="background:' + o.hex + '"></i>' + o.name + ' <kbd>' + (i + 1) + '</kbd>';
+      answers.appendChild(b);
+    });
+  }
+
+  function answer(i) {
+    if (!s || !loop.running) return;
+    word.classList.remove('flash-ok', 'flash-bad'); void word.offsetWidth;
+    if (opts[i] === ink) {
+      s.streak++; s.correct++;
+      s.score += 10 * mult();
+      s.time = Math.min(START, s.time + 0.25);
+      word.classList.add('flash-ok');
+      VT.beep(600 + Math.min(s.streak, 15) * 25, 0.05, 'triangle', 0.05);
+    } else {
+      s.streak = 0; s.time -= 2; s.wrong++;
+      word.classList.add('flash-bad');
+      VT.beep(150, 0.15, 'sawtooth', 0.05);
+    }
+    round(); hud();
+  }
+
+  function hud() {
+    el.score.textContent = VT.fmt(s.score);
+    el.streak.textContent = s.streak;
+    el.mult.textContent = mult();
+    el.time.textContent = Math.max(0, s.time).toFixed(1);
+    el.bar.style.width = VT.clamp(s.time / START, 0, 1) * 100 + '%';
+  }
+
+  var loop = VT.loop(function (dt) { s.time -= dt; if (s.time <= 0) end(); hud(); });
+
+  function start() { VT.hide(ov); s = { score: 0, streak: 0, time: START, correct: 0, wrong: 0 }; round(); hud(); loop.start(); }
+
+  function end() {
+    loop.stop();
+    var r = VT.submit(s.score);
+    showBest();
+    var acc = s.correct + s.wrong ? Math.round((s.correct / (s.correct + s.wrong)) * 100) : 0;
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Time up',
+      title: VT.fmt(s.score),
+      stats: [['Correct', s.correct], ['Accuracy', acc + '%'], ['Best', VT.fmt(r.best), true]],
+      button: 'Play again', onAction: start, hint: 'Space to restart',
+    });
+  }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+
+  answers.addEventListener('pointerdown', function (e) { var b = e.target.closest('.ans'); if (b) { e.preventDefault(); answer(+b.dataset.i); } });
+  answers.addEventListener('keydown', function (e) { if (e.key === 'Enter') { var b = e.target.closest('.ans'); if (b) { e.preventDefault(); answer(+b.dataset.i); } } });
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    var n = +e.key;
+    if (n >= 1 && n <= 4) answer(n - 1);
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+  });
+  VT.onPause(function () {
+    if (loop.running) { loop.stop(); VT.overlay(ov, { eyebrow: 'Paused', title: 'Color Tap', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } }); }
+  });
+
+  showBest();
+  word.textContent = 'VIOLET'; word.style.color = '#c8ff2e';
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Color Tap',
+    sub: 'The word says one colour; the ink is another. Choose the ink colour. Five in a row raises your multiplier.',
+    button: 'Start', onAction: start, hint: 'Keys 1–4 · Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

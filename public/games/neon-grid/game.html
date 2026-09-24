@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Neon Grid — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: clamp(4px, 1vmin, 10px); width: min(100%, var(--size)); aspect-ratio: 1; }
+  .cell { border: 1px solid var(--line2); border-radius: 4px; background: #0d0f11; transition: background .12s, border-color .12s, box-shadow .12s, transform .08s; position: relative; }
+  .cell:active { transform: scale(.96); }
+  .cell.hot { background: var(--lime); border-color: var(--lime); box-shadow: 0 0 22px rgba(200,255,46,.45); }
+  .cell.hot::after { content: ''; position: absolute; inset: 0; border-radius: 3px; background: #0a0b0c; transform-origin: left; transform: scaleX(var(--p, 0)); opacity: .35; }
+  .cell.decoy { background: rgba(139,125,255,.25); border-color: var(--violet); }
+  .cell.decoy::before { content: ''; position: absolute; inset: 30%; border: 2px solid var(--violet); transform: rotate(45deg); }
+  .cell.hit { background: #fff; }
+  .cell.bad { background: var(--red); border-color: var(--red); }
+  .timebar { height: 3px; background: var(--line); }
+  .timebar i { display: block; height: 100%; background: var(--lime); width: 100%; transition: width .1s linear; }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+    <div class="vt-stat"><b>Level</b><span id="level">1</span></div>
+    <div class="vt-stat"><b>Streak</b><span id="streak">0</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Time</b><span id="time">30.0</span></div>
+    <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+  </div>
+  <div class="timebar"><i id="bar"></i></div>
+  <div class="vt-stage" id="stage">
+    <div class="vt-center"><div class="board" id="board" role="grid" aria-label="Neon grid"></div></div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var N = 6, START = 30;
+  var board = VT.$('#board'), ov = VT.$('#ov'), stage = VT.$('#stage');
+  var el = { score: VT.$('#score'), level: VT.$('#level'), streak: VT.$('#streak'), time: VT.$('#time'), best: VT.$('#best'), bar: VT.$('#bar') };
+  var cells = [];
+  var s;
+
+  for (var i = 0; i < N * N; i++) {
+    var c = document.createElement('button');
+    c.className = 'cell';
+    c.setAttribute('aria-label', 'Cell ' + (i + 1));
+    c.dataset.i = i;
+    board.appendChild(c);
+    cells.push(c);
+  }
+
+  function fit() {
+    var r = stage.getBoundingClientRect();
+    board.style.setProperty('--size', Math.floor(Math.min(r.width, r.height) - 32) + 'px');
+  }
+  new ResizeObserver(fit).observe(stage);
+
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+
+  function lifetime() { return Math.max(0.42, 1.35 - s.level * 0.08); }
+
+  function clear() { cells.forEach(function (c) { c.className = 'cell'; c.style.removeProperty('--p'); }); }
+
+  function spawn() {
+    clear();
+    var free = [];
+    for (var i = 0; i < N * N; i++) if (i !== s.target) free.push(i);
+    VT.shuffle(free);
+    s.target = free[0];
+    s.left = lifetime();
+    s.decoys = free.slice(1, 1 + Math.min(4, Math.floor((s.level - 1) / 2)));
+    cells[s.target].className = 'cell hot';
+    s.decoys.forEach(function (d) { cells[d].className = 'cell decoy'; });
+  }
+
+  function flash(i, cls) {
+    var c = cells[i];
+    c.classList.add(cls);
+    setTimeout(function () { c.classList.remove(cls); }, 140);
+  }
+
+  function hud() {
+    el.score.textContent = VT.fmt(s.score);
+    el.level.textContent = s.level;
+    el.streak.textContent = s.streak;
+    el.time.textContent = Math.max(0, s.time).toFixed(1);
+    el.bar.style.width = VT.clamp(s.time / START, 0, 1) * 100 + '%';
+  }
+
+  board.addEventListener('pointerdown', function (e) {
+    var t = e.target.closest('.cell');
+    if (!t || !s || !loop.running) return;
+    e.preventDefault();
+    var i = +t.dataset.i;
+    if (i === s.target) {
+      s.streak++;
+      s.hits++;
+      s.score += 10 * s.level + Math.min(s.streak, 20) * 2;
+      s.time = Math.min(START, s.time + 0.35);
+      if (s.hits % 8 === 0) { s.level++; VT.beep(880, 0.12, 'triangle', 0.06); }
+      else VT.beep(520 + Math.min(s.streak, 12) * 30, 0.05);
+      flash(i, 'hit');
+      spawn();
+    } else if (s.decoys.indexOf(i) !== -1) {
+      s.time -= 2; s.streak = 0; flash(i, 'bad'); VT.beep(140, 0.18, 'sawtooth');
+    } else {
+      s.time -= 0.5; s.streak = 0; flash(i, 'bad'); VT.beep(200, 0.08, 'sawtooth', 0.03);
+    }
+    hud();
+  });
+
+  var loop = VT.loop(function (dt) {
+    s.time -= dt;
+    s.left -= dt;
+    var hot = cells[s.target];
+    if (hot) hot.style.setProperty('--p', 1 - s.left / lifetime());
+    if (s.left <= 0) { s.streak = 0; s.time -= 0.75; VT.beep(180, 0.06, 'square', 0.02); spawn(); }
+    if (s.time <= 0) end();
+    hud();
+  });
+
+  function start() {
+    VT.hide(ov);
+    s = { score: 0, level: 1, streak: 0, hits: 0, time: START, target: -1, left: 0, decoys: [] };
+    spawn(); hud(); loop.start();
+  }
+
+  function end() {
+    loop.stop(); clear();
+    var r = VT.submit(s.score);
+    showBest();
+    VT.beep(300, 0.3, 'triangle');
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Time up',
+      title: VT.fmt(s.score),
+      stats: [['Level', s.level], ['Hits', s.hits], ['Best', VT.fmt(r.best), true]],
+      button: 'Play again', onAction: start, hint: 'Space to restart',
+    });
+  }
+
+  VT.onPause(function () {
+    if (loop.running) {
+      loop.stop();
+      VT.overlay(ov, { eyebrow: 'Paused', title: 'Neon Grid', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } });
+    }
+  });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) b.click(); }
+  });
+
+  showBest();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Neon Grid',
+    sub: 'Hit the lit cell before it fades. Avoid violet decoys. 30 seconds on the clock — every hit buys time.',
+    button: 'Start', onAction: start, hint: 'Mouse · Touch',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

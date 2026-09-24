@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Gravity Shift — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Gravity Shift game area"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Distance</b><span id="score">0 m</span></div>
+      <div class="vt-stat"><b>Flips</b><span id="flips">0</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), flips: VT.$('#flips'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop || !loop.running) draw(); });
+  var ctx = view.ctx, loop = null, s = null;
+
+  // World in logical units: corridor height H=100; everything scales to the canvas.
+  function k() { return (view.h * 0.62) / 100; }
+  function top() { return view.h * 0.19; }
+
+  function reset() {
+    s = { x: 0, y: 92, vy: 0, g: 1, onGround: true, speed: 55, spikes: [], nextSpike: 70, flips: 0, dead: false, parts: [] };
+    for (var i = 0; i < 4; i++) addSpike();
+  }
+
+  function addSpike() {
+    var gap = Math.max(26, 60 - s.speed * 0.25) * VT.rand(0.8, 1.5);
+    var side = Math.random() < 0.5 ? 'floor' : 'ceil';
+    var w = VT.rand(8, 14 + Math.min(16, s.speed * 0.08));
+    s.spikes.push({ x: s.nextSpike, w: w, side: side, h: VT.rand(14, 22) });
+    // Occasional paired spikes demand a quick double flip.
+    if (Math.random() < Math.min(0.4, s.speed / 400)) s.spikes.push({ x: s.nextSpike + w + VT.rand(18, 26), w: VT.rand(8, 12), side: side === 'floor' ? 'ceil' : 'floor', h: VT.rand(14, 20) });
+    s.nextSpike += gap + w + 30;
+  }
+
+  function flip() {
+    if (!s || s.dead || !loop.running) return;
+    s.g *= -1; s.flips++; s.onGround = false;
+    VT.beep(s.g > 0 ? 330 : 520, 0.05, 'triangle', 0.05);
+  }
+
+  function update(dt) {
+    s.speed = Math.min(140, 55 + s.x * 0.02);
+    s.x += s.speed * dt;
+    s.vy += s.g * 520 * dt;
+    s.y += s.vy * dt;
+    var P = 6;
+    if (s.y > 100 - P) { s.y = 100 - P; s.vy = 0; s.onGround = true; }
+    if (s.y < P) { s.y = P; s.vy = 0; s.onGround = true; }
+    while (s.nextSpike < s.x + 260) addSpike();
+    s.spikes = s.spikes.filter(function (sp) { return sp.x + sp.w > s.x - 60; });
+    // Collision: player box 10×12 at screen x = 30 units from left of view.
+    var px = s.x, pw = 8, ph = 10;
+    for (var i = 0; i < s.spikes.length; i++) {
+      var sp = s.spikes[i];
+      if (px + pw / 2 < sp.x + 2 || px - pw / 2 > sp.x + sp.w - 2) continue;
+      var t = (px - sp.x) / sp.w, peak = 1 - Math.abs(t - 0.5) * 2;
+      var reach = sp.h * VT.clamp(peak, 0.2, 1);
+      if (sp.side === 'floor' && s.y + ph / 2 > 100 - reach) return die();
+      if (sp.side === 'ceil' && s.y - ph / 2 < reach) return die();
+    }
+    el.score.textContent = Math.floor(s.x / 10) + ' m';
+    el.flips.textContent = s.flips;
+  }
+
+  function draw() {
+    var w = view.w, h = view.h, K = k(), T = top();
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, w, h);
+    var camX = s ? s.x - (w * 0.22) / K : 0;
+    function sx(x) { return (x - camX) * K; }
+    function sy(y) { return T + y * K; }
+    // Parallax grid
+    ctx.strokeStyle = 'rgba(139,125,255,0.07)'; ctx.lineWidth = 1;
+    var step = 20 * K, off = (camX * K * 0.5) % step;
+    for (var gx = -off; gx < w; gx += step) { ctx.beginPath(); ctx.moveTo(gx, T); ctx.lineTo(gx, T + 100 * K); ctx.stroke(); }
+    // Surfaces
+    ctx.fillStyle = '#111315';
+    ctx.fillRect(0, 0, w, T); ctx.fillRect(0, T + 100 * K, w, h);
+    ctx.strokeStyle = '#8b7dff'; ctx.lineWidth = 2; ctx.shadowColor = 'rgba(139,125,255,.6)'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(0, T); ctx.lineTo(w, T); ctx.moveTo(0, T + 100 * K); ctx.lineTo(w, T + 100 * K); ctx.stroke();
+    ctx.shadowBlur = 0;
+    if (!s) return;
+    // Spikes
+    ctx.fillStyle = '#ff5c5c';
+    s.spikes.forEach(function (sp) {
+      var x0 = sx(sp.x), x1 = sx(sp.x + sp.w);
+      if (x1 < 0 || x0 > w) return;
+      ctx.beginPath();
+      if (sp.side === 'floor') { ctx.moveTo(x0, sy(100)); ctx.lineTo((x0 + x1) / 2, sy(100 - sp.h)); ctx.lineTo(x1, sy(100)); }
+      else { ctx.moveTo(x0, sy(0)); ctx.lineTo((x0 + x1) / 2, sy(sp.h)); ctx.lineTo(x1, sy(0)); }
+      ctx.closePath(); ctx.fill();
+    });
+    s.parts.forEach(function (p) { ctx.globalAlpha = Math.max(0, p.life * 1.5); ctx.fillStyle = '#c8ff2e'; ctx.fillRect(p.x, p.y, 3, 3); });
+    ctx.globalAlpha = 1;
+    if (!s.dead) {
+      var px = sx(s.x), py = sy(s.y), size = 10 * K;
+      ctx.save(); ctx.translate(px, py);
+      ctx.fillStyle = '#c8ff2e'; ctx.shadowColor = 'rgba(200,255,46,.7)'; ctx.shadowBlur = 14;
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+      ctx.shadowBlur = 0; ctx.fillStyle = '#07080a';
+      ctx.fillRect(size * 0.08, s.g > 0 ? -size * 0.25 : 0, size * 0.25, size * 0.25);
+      ctx.restore();
+    }
+  }
+
+  loop = VT.loop(update, draw);
+
+  function die() {
+    s.dead = true; loop.stop();
+    VT.beep(110, 0.35, 'sawtooth', 0.07);
+    var K = k(), px = (w0()) , py = top() + s.y * K;
+    for (var i = 0; i < 24; i++) { var a = Math.random() * 6.28, v = VT.rand(50, 250); s.parts.push({ x: px, y: py, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: VT.rand(0.3, 0.7) }); }
+    var t0 = performance.now();
+    (function fx() {
+      s.parts.forEach(function (p) { p.x += p.vx / 60; p.y += p.vy / 60; p.life -= 1 / 60; });
+      draw();
+      if (performance.now() - t0 < 550) requestAnimationFrame(fx); else end();
+    })();
+  }
+  function w0() { return view.w * 0.22; }
+
+  function end() {
+    var m = Math.floor(s.x / 10), r = VT.submit(m);
+    showBest();
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Impact',
+      title: m + ' m',
+      stats: [['Flips', s.flips], ['Best', r.best + ' m', true]],
+      button: 'Run again', onAction: start, hint: 'Space to restart',
+    });
+  }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : b + ' m'; }
+  function start() { VT.hide(ov); reset(); loop.start(); }
+
+  canvas.addEventListener('pointerdown', function (e) { e.preventDefault(); flip(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } return; }
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'KeyW') { e.preventDefault(); flip(); }
+    if (e.code === 'KeyP') pause();
+  });
+  function pause() {
+    if (!loop.running) return;
+    loop.stop();
+    VT.overlay(ov, { eyebrow: 'Paused', title: 'Gravity Shift', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } });
+  }
+  VT.onPause(pause);
+
+  showBest(); draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Gravity Shift',
+    sub: 'You run automatically. Flip gravity to switch between floor and ceiling and dodge the spikes.',
+    button: 'Start', onAction: start, hint: 'Space · Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

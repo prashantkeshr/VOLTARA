@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Reaction Core — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .pad { position: absolute; inset: 0; display: grid; place-items: center; cursor: pointer; transition: background .08s; }
+  .core { position: relative; width: min(52vmin, 360px); aspect-ratio: 1; display: grid; place-items: center; }
+  .core .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid #25292e; }
+  .core .ring:nth-child(2) { inset: 12%; border-style: dashed; }
+  .core .ring:nth-child(3) { inset: 26%; }
+  .core .dot { width: 34%; aspect-ratio: 1; border-radius: 50%; background: #1b1e22; border: 2px solid #353b42; transition: background .06s, box-shadow .06s; }
+  .label { position: absolute; bottom: -64px; left: 50%; transform: translateX(-50%); text-align: center; white-space: nowrap; }
+  .label .big { font-family: var(--display); font-size: clamp(26px, 6vmin, 44px); font-weight: 700; letter-spacing: -.02em; }
+  .label .small { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+  .pad.wait .dot { background: #3a1f22; border-color: #ff5c5c; }
+  .pad.wait .ring { border-color: rgba(255,92,92,.3); }
+  .pad.go { background: rgba(200,255,46,.06); }
+  .pad.go .dot { background: #c8ff2e; border-color: #c8ff2e; box-shadow: 0 0 60px rgba(200,255,46,.7); }
+  .pad.go .ring { border-color: rgba(200,255,46,.45); }
+  .pad.early .dot { background: #ff5c5c; }
+  .rounds { position: absolute; top: 16px; right: 16px; display: flex; gap: 6px; }
+  .rounds i { width: 36px; height: 4px; background: #25292e; }
+  .rounds i.done { background: #c8ff2e; }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Last</b><span id="last">–</span></div>
+    <div class="vt-stat"><b>Average</b><span id="avg">–</span></div>
+    <div class="vt-stat"><b>Round</b><span id="round">0/5</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Best avg</b><span id="best">–</span></div>
+  </div>
+  <div class="vt-stage">
+    <div class="pad" id="pad" role="button" tabindex="0" aria-live="assertive" aria-label="Reaction pad">
+      <div class="core"><div class="ring"></div><div class="ring"></div><div class="ring"></div><div class="dot"></div>
+        <div class="label"><div class="big" id="big">READY</div><div class="small" id="small">Press to arm</div></div>
+      </div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var ROUNDS = 5;
+  var pad = VT.$('#pad'), ov = VT.$('#ov'), big = VT.$('#big'), small = VT.$('#small');
+  var el = { last: VT.$('#last'), avg: VT.$('#avg'), round: VT.$('#round'), best: VT.$('#best') };
+  var state = 'idle', times = [], timer = 0, goAt = 0;
+
+  function set(cls, b, sm) { pad.className = 'pad ' + cls; big.textContent = b; small.textContent = sm; }
+  function avg() { return times.length ? Math.round(times.reduce(function (a, b) { return a + b; }, 0) / times.length) : 0; }
+  function hud() {
+    el.last.textContent = times.length ? times[times.length - 1] + ' ms' : '–';
+    el.avg.textContent = times.length ? avg() + ' ms' : '–';
+    el.round.textContent = times.length + '/' + ROUNDS;
+    var b = VT.getBest(); el.best.textContent = b === null ? '–' : b + ' ms';
+  }
+
+  function arm() {
+    state = 'wait';
+    set('wait', 'WAIT…', 'React when the core turns lime');
+    timer = setTimeout(function () {
+      state = 'go';
+      goAt = performance.now();
+      set('go', 'NOW', '');
+      VT.beep(880, 0.06, 'square', 0.05);
+    }, VT.rand(1400, 4200));
+  }
+
+  function press() {
+    if (!ov.hidden) return;
+    if (state === 'idle' || state === 'result') { arm(); return; }
+    if (state === 'wait') {
+      clearTimeout(timer);
+      state = 'result';
+      set('early', 'TOO EARLY', 'False start — press to retry this round');
+      VT.beep(140, 0.2, 'sawtooth', 0.06);
+      return;
+    }
+    if (state === 'go') {
+      var ms = Math.round(performance.now() - goAt);
+      times.push(ms);
+      hud();
+      VT.beep(1200, 0.04, 'triangle', 0.05);
+      if (times.length >= ROUNDS) return finish();
+      state = 'result';
+      set('', ms + ' ms', rating(ms) + ' · press for round ' + (times.length + 1));
+    }
+  }
+
+  function rating(ms) { return ms < 180 ? 'Elite' : ms < 230 ? 'Sharp' : ms < 290 ? 'Solid' : ms < 380 ? 'Average' : 'Warming up'; }
+
+  function finish() {
+    state = 'idle';
+    var a = avg();
+    var r = VT.submit(a, { lowerIsBetter: true });
+    hud();
+    set('', a + ' ms', 'Average of ' + ROUNDS);
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : rating(a),
+      title: a + ' ms',
+      stats: [['Fastest', Math.min.apply(null, times) + ' ms'], ['Slowest', Math.max.apply(null, times) + ' ms'], ['Best avg', r.best + ' ms', true]],
+      button: 'Test again', onAction: start, hint: 'Space · Click · Tap',
+    });
+  }
+
+  function start() { VT.hide(ov); times = []; hud(); state = 'idle'; set('', 'READY', 'Press to arm'); pad.focus(); }
+
+  pad.addEventListener('pointerdown', function (e) { e.preventDefault(); press(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      if (!ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) b.click(); }
+      else press();
+    }
+  });
+  VT.onPause(function () { if (state === 'wait') { clearTimeout(timer); state = 'idle'; set('', 'PAUSED', 'Press to re-arm'); } });
+
+  hud();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Reaction Core',
+    sub: 'Five rounds. Wait for the core to turn lime, then react instantly. Pressing early is a false start.',
+    button: 'Begin test', onAction: start, hint: 'Space · Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

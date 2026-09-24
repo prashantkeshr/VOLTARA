@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "voltara-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5195", "--strictPort"],
+      "port": 5195
+    },
+    {
+      "name": "voltara-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--port", "5196", "--strictPort"],
+      "port": 5196
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Stack Line — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Stack Line game area"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Height</b><span id="score">0</span></div>
+      <div class="vt-stat"><b>Perfect</b><span id="perfect">0</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), perfect: VT.$('#perfect'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop || !loop.running) draw(); });
+  var ctx = view.ctx, loop = null, s = null;
+
+  // World units: base width 1.0 = min(view.w * 0.55, 360px)
+  function scale() { return Math.min(view.w * 0.6, 380); }
+  // Half-width of the playfield in world units (block may travel just past the tower's reach).
+  function bound() { return Math.min(1.25, (view.w / 2 - 8) / scale()); }
+  function blockH() { return Math.max(18, Math.min(34, view.h / 22)); }
+
+  function reset() {
+    s = { blocks: [{ x: -0.5, w: 1 }], cur: null, dir: 1, speed: 0.9, cam: 0, perfect: 0, streak: 0, falling: [], over: false, pulse: 0 };
+    next();
+  }
+
+  function next() {
+    var top = s.blocks[s.blocks.length - 1];
+    s.dir = s.blocks.length % 2 ? 1 : -1;
+    var B = bound();
+    s.cur = { x: s.dir > 0 ? -B : B - top.w, w: top.w };
+    s.speed = Math.min(2.6, 0.9 + s.blocks.length * 0.045);
+  }
+
+  function drop() {
+    if (!s || s.over || !loop.running) return;
+    var top = s.blocks[s.blocks.length - 1], c = s.cur;
+    var left = Math.max(c.x, top.x), right = Math.min(c.x + c.w, top.x + top.w);
+    var overlap = right - left;
+    if (overlap <= 0) {
+      s.falling.push({ x: c.x, w: c.w, y: s.blocks.length, vy: 0, level: s.blocks.length });
+      gameOver();
+      return;
+    }
+    var tolerance = 0.025;
+    if (Math.abs(c.x - top.x) < tolerance) {
+      s.blocks.push({ x: top.x, w: top.w });
+      s.perfect++; s.streak++; s.pulse = 1;
+      VT.beep(520 + Math.min(s.streak, 10) * 60, 0.09, 'triangle', 0.06);
+      // Reward long perfect streaks by growing back slightly.
+      if (s.streak >= 4) { var t = s.blocks[s.blocks.length - 1]; t.w = Math.min(1, t.w + 0.05); t.x -= 0.025; }
+    } else {
+      s.streak = 0;
+      if (c.x < top.x) s.falling.push({ x: c.x, w: top.x - c.x, y: s.blocks.length, vy: 0 });
+      if (c.x + c.w > top.x + top.w) s.falling.push({ x: top.x + top.w, w: c.x + c.w - (top.x + top.w), y: s.blocks.length, vy: 0 });
+      s.blocks.push({ x: left, w: overlap });
+      VT.beep(320, 0.05, 'square', 0.04);
+    }
+    el.score.textContent = s.blocks.length - 1;
+    el.perfect.textContent = s.perfect;
+    next();
+  }
+
+  function update(dt) {
+    var c = s.cur;
+    var B = bound();
+    c.x += s.dir * s.speed * dt;
+    if (c.x + c.w > B) { c.x = B - c.w; s.dir = -1; }
+    if (c.x < -B) { c.x = -B; s.dir = 1; }
+    var target = Math.max(0, s.blocks.length - (view.h / blockH()) * 0.45);
+    s.cam += (target - s.cam) * Math.min(1, dt * 5);
+    s.falling.forEach(function (f) { f.vy += 9 * dt; f.y -= f.vy * dt; });
+    s.falling = s.falling.filter(function (f) { return f.y > s.cam - 10; });
+    if (s.pulse > 0) s.pulse -= dt * 3;
+  }
+
+  function color(i, a) { return 'hsla(' + ((78 + i * 9) % 360) + ', 85%, ' + (52 + (i % 3) * 5) + '%,' + (a == null ? 1 : a) + ')'; }
+
+  function draw() {
+    var w = view.w, h = view.h, S = scale(), bh = blockH();
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+    for (var gx = w / 2 % 40; gx < w; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+    if (!s) return;
+    var baseY = h - 40;
+    function yOf(level) { return baseY - (level - s.cam) * bh; }
+    function rect(x, wid, level, fill) { ctx.fillStyle = fill; ctx.fillRect(w / 2 + x * S, yOf(level) - bh, wid * S, bh - 2); }
+    s.blocks.forEach(function (b, i) { if (yOf(i) > -bh && yOf(i) < h + bh) rect(b.x, b.w, i, i === 0 ? '#25292e' : color(i)); });
+    if (s.pulse > 0) {
+      var tb = s.blocks[s.blocks.length - 1];
+      ctx.strokeStyle = 'rgba(255,255,255,' + s.pulse + ')'; ctx.lineWidth = 2;
+      ctx.strokeRect(w / 2 + tb.x * S - 4, yOf(s.blocks.length - 1) - bh - 4, tb.w * S + 8, bh + 6);
+    }
+    s.falling.forEach(function (f) { rect(f.x, f.w, f.y, 'rgba(139,125,255,0.6)'); });
+    if (!s.over) {
+      var c = s.cur;
+      ctx.shadowColor = color(s.blocks.length); ctx.shadowBlur = 16;
+      rect(c.x, c.w, s.blocks.length, color(s.blocks.length));
+      ctx.shadowBlur = 0;
+      // Guide line
+      var top = s.blocks[s.blocks.length - 1];
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([3, 5]);
+      ctx.beginPath(); ctx.moveTo(w / 2 + top.x * S, yOf(s.blocks.length) - bh); ctx.lineTo(w / 2 + top.x * S, yOf(s.blocks.length - 1)); ctx.moveTo(w / 2 + (top.x + top.w) * S, yOf(s.blocks.length) - bh); ctx.lineTo(w / 2 + (top.x + top.w) * S, yOf(s.blocks.length - 1)); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  loop = VT.loop(update, draw);
+
+  function gameOver() {
+    s.over = true;
+    VT.beep(140, 0.3, 'sawtooth', 0.07);
+    var height = s.blocks.length - 1;
+    var t0 = performance.now();
+    (function settle() {
+      update(1 / 60); draw();
+      if (performance.now() - t0 < 700) requestAnimationFrame(settle);
+      else {
+        loop.stop();
+        var r = VT.submit(height);
+        showBest();
+        VT.overlay(ov, {
+          eyebrow: r.isNew && !r.first ? 'New best' : 'Tower complete',
+          title: height + ' high',
+          stats: [['Perfect', s.perfect], ['Best', r.best, true]],
+          button: 'Stack again', onAction: start, hint: 'Space to restart',
+        });
+      }
+    })();
+    loop.stop();
+  }
+
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : b; }
+  function start() { VT.hide(ov); reset(); el.score.textContent = 0; el.perfect.textContent = 0; loop.start(); }
+
+  canvas.addEventListener('pointerdown', function (e) { e.preventDefault(); drop(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    if ((e.code === 'Space' || e.code === 'Enter') && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } return; }
+    if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'Enter') { e.preventDefault(); drop(); }
+  });
+  VT.onPause(function () {
+    if (loop.running && s && !s.over) { loop.stop(); VT.overlay(ov, { eyebrow: 'Paused', title: 'Stack Line', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } }); }
+  });
+
+  showBest();
+  draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Stack Line',
+    sub: 'Drop the sliding block onto the tower. Overhang is sliced off. Perfect drops keep your width — four in a row grow it back.',
+    button: 'Start', onAction: start, hint: 'Space · Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

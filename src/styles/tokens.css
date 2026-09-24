@@ -1,0 +1,80 @@
+/* VOLTARA design tokens — the single source of visual truth. */
+:root {
+  color-scheme: dark;
+
+  --background: #0a0b0c;
+  --background-deep: #060707;
+  --surface: #111315;
+  --surface-elevated: #181b1e;
+  --surface-hover: #1f2327;
+  --border: #25292e;
+  --border-strong: #353b42;
+  --text: #eef0f2;
+  --text-muted: #8d959e;
+  --text-dim: #5d656d;
+
+  --accent: #c8ff2e;          /* electric lime — Play, Focus, selection */
+  --accent-ink: #c8ff2e;      /* accent used as text */
+  --accent-contrast: #0a0b0c; /* text on accent fill */
+  --accent-soft: rgba(200, 255, 46, 0.1);
+  --accent-glow: rgba(200, 255, 46, 0.28);
+  --violet: #8b7dff;          /* restrained secondary */
+  --violet-soft: rgba(139, 125, 255, 0.12);
+  --danger: #ff5c5c;
+  --danger-soft: rgba(255, 92, 92, 0.1);
+
+  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.75);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --transition: 180ms var(--ease);
+  --transition-slow: 260ms var(--ease);
+
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  --header-h: 60px;
+  --bottom-nav-h: 0px;
+  --gutter: clamp(16px, 3.2vw, 40px);
+  --content-max: 1680px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme='system'] {
+    color-scheme: light;
+    --background: #f3f4f1;
+    --background-deep: #e9ebe6;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-hover: #eef0eb;
+    --border: #dcdfd8;
+    --border-strong: #c3c7be;
+    --text: #0e1011;
+    --text-muted: #5a6168;
+    --text-dim: #8a9097;
+    --accent: #c8ff2e;
+    --accent-ink: #3f6a00;
+    --accent-contrast: #0a0b0c;
+    --accent-soft: rgba(90, 140, 0, 0.1);
+    --accent-glow: rgba(120, 190, 0, 0.25);
+    --violet: #5b4ce0;
+    --violet-soft: rgba(91, 76, 224, 0.1);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px -12px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --header-h: 56px;
+    --bottom-nav-h: 60px;
+  }
+}

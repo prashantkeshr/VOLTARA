@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Precision Drop — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Precision Drop game area"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+      <div class="vt-stat"><b>Drop</b><span id="drop">1/10</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var DROPS = 10;
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), drop: VT.$('#drop'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop || !loop.running) draw(); });
+  var ctx = view.ctx, loop = null, s = null;
+
+  function geo() {
+    var w = view.w, h = view.h;
+    return { top: Math.max(70, h * 0.14), floor: h - Math.max(40, h * 0.1), left: w * 0.08, right: w * 0.92, u: Math.min(w, h) / 600 };
+  }
+
+  function reset() {
+    s = { n: 0, score: 0, t: 0, carrier: 0.5, cdir: 1, cspeed: 0.35, pad: 0.5, pdir: -1, pspeed: 0.12, padW: 0.22, payload: null, msg: null, results: [] };
+    nextRound();
+  }
+
+  function nextRound() {
+    s.n++;
+    s.cspeed = 0.32 + s.n * 0.035;
+    s.pspeed = 0.08 + s.n * 0.022;
+    s.padW = Math.max(0.1, 0.22 - s.n * 0.011);
+    s.payload = null;
+    hud();
+  }
+
+  function release() {
+    if (!s || s.payload || !loop.running) return;
+    var g = geo();
+    s.payload = { x: s.carrier, y: g.top + 18 * g.u, vy: 0, vx: s.cdir * s.cspeed * 0.35 };
+    VT.beep(300, 0.04, 'triangle', 0.04);
+  }
+
+  function update(dt) {
+    var g = geo();
+    s.t += dt;
+    s.carrier += s.cdir * s.cspeed * dt;
+    if (s.carrier > 0.95) { s.carrier = 0.95; s.cdir = -1; }
+    if (s.carrier < 0.05) { s.carrier = 0.05; s.cdir = 1; }
+    s.pad += s.pdir * s.pspeed * dt;
+    if (s.pad + s.padW / 2 > 1) { s.pad = 1 - s.padW / 2; s.pdir = -1; }
+    if (s.pad - s.padW / 2 < 0) { s.pad = s.padW / 2; s.pdir = 1; }
+    if (s.msg) { s.msg.life -= dt; if (s.msg.life <= 0) s.msg = null; }
+    if (s.advance > 0) { s.advance -= dt; if (s.advance <= 0) { if (s.n >= DROPS) return end(); nextRound(); } }
+    var p = s.payload;
+    if (p && !p.landed) {
+      p.vy += 1500 * g.u * dt;
+      p.y += p.vy * dt;
+      p.x += p.vx * dt;
+      if (p.y >= g.floor - 10 * g.u) {
+        p.y = g.floor - 10 * g.u; p.landed = true;
+        var off = Math.abs(p.x - s.pad), pts, label;
+        if (off <= s.padW * 0.12) { pts = 300; label = 'CENTRE +300'; VT.beep(1200, 0.12, 'triangle', 0.06); }
+        else if (off <= s.padW / 2) { pts = 100; label = 'PAD +100'; VT.beep(700, 0.08, 'triangle', 0.05); }
+        else { pts = 0; label = 'MISS'; VT.beep(150, 0.15, 'sawtooth', 0.05); }
+        s.score += pts;
+        s.results.push(pts);
+        s.msg = { text: label, x: p.x, life: 0.9, good: pts > 0 };
+        s.advance = 0.65;
+      }
+    }
+  }
+
+  function X(v) { var g = geo(); return g.left + v * (g.right - g.left); }
+
+  function draw() {
+    var w = view.w, h = view.h, g = geo();
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#181b1e'; ctx.lineWidth = 1;
+    for (var y = g.top + 40; y < g.floor; y += 40) { ctx.beginPath(); ctx.moveTo(g.left, y); ctx.lineTo(g.right, y); ctx.stroke(); }
+    ctx.strokeStyle = '#353b42'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(g.left, g.top); ctx.lineTo(g.right, g.top); ctx.moveTo(0, g.floor); ctx.lineTo(w, g.floor); ctx.stroke();
+    var cx = X(s ? s.carrier : 0.5), px = X(s ? s.pad : 0.5), pw = (s ? s.padW : 0.22) * (g.right - g.left);
+    // Pad with centre zone
+    ctx.fillStyle = 'rgba(200,255,46,0.15)'; ctx.fillRect(px - pw / 2, g.floor - 6 * g.u, pw, 6 * g.u);
+    ctx.strokeStyle = '#c8ff2e'; ctx.lineWidth = 2; ctx.strokeRect(px - pw / 2, g.floor - 6 * g.u, pw, 6 * g.u);
+    ctx.fillStyle = '#c8ff2e'; ctx.fillRect(px - pw * 0.12, g.floor - 6 * g.u, pw * 0.24, 6 * g.u);
+    // Carrier
+    ctx.fillStyle = '#8b7dff'; ctx.fillRect(cx - 28 * g.u, g.top - 10 * g.u, 56 * g.u, 14 * g.u);
+    if (s && !s.payload) {
+      ctx.strokeStyle = 'rgba(238,240,242,0.12)'; ctx.setLineDash([4, 8]);
+      ctx.beginPath(); ctx.moveTo(cx, g.top + 28 * g.u); ctx.lineTo(cx, g.floor - 8 * g.u); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#eef0f2'; ctx.beginPath(); ctx.arc(cx, g.top + 16 * g.u, 9 * g.u, 0, 6.283); ctx.fill();
+    }
+    if (s && s.payload) {
+      var p = s.payload;
+      ctx.fillStyle = '#eef0f2'; ctx.shadowColor = 'rgba(255,255,255,.5)'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(X(p.x), p.y, 9 * g.u, 0, 6.283); ctx.fill(); ctx.shadowBlur = 0;
+    }
+    if (s && s.msg) {
+      ctx.globalAlpha = Math.min(1, s.msg.life * 2);
+      ctx.fillStyle = s.msg.good ? '#c8ff2e' : '#ff5c5c';
+      ctx.font = '700 ' + Math.round(20 * g.u + 6) + 'px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.msg.text, X(s.msg.x), g.floor - 40 * g.u - (0.9 - s.msg.life) * 40);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  loop = VT.loop(update, draw);
+
+  function hud() { el.score.textContent = VT.fmt(s.score); el.drop.textContent = Math.min(s.n, DROPS) + '/' + DROPS; }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+
+  function end() {
+    loop.stop();
+    var r = VT.submit(s.score);
+    showBest(); hud();
+    var centres = s.results.filter(function (x) { return x === 300; }).length, hits = s.results.filter(function (x) { return x > 0; }).length;
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Run complete',
+      title: VT.fmt(s.score),
+      stats: [['Centre', centres], ['Hits', hits + '/' + DROPS], ['Best', VT.fmt(r.best), true]],
+      button: 'Play again', onAction: start, hint: 'Space to restart',
+    });
+  }
+
+  function start() { VT.hide(ov); reset(); loop.start(); }
+
+  canvas.addEventListener('pointerdown', function (e) { e.preventDefault(); release(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } return; }
+    if (e.code === 'Space' || e.code === 'ArrowDown' || e.code === 'Enter') { e.preventDefault(); release(); }
+  });
+  VT.onPause(function () {
+    if (loop.running) { loop.stop(); VT.overlay(ov, { eyebrow: 'Paused', title: 'Precision Drop', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } }); }
+  });
+
+  showBest(); draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Precision Drop',
+    sub: 'Release the payload so it lands on the moving pad. The lime centre scores triple. Ten drops, and everything gets faster.',
+    button: 'Start', onAction: start, hint: 'Space · Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

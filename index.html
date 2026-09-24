@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VOLTARA — Enter the Game</title>
+    <meta name="description" content="Instant-play browser games. No account. No waiting. Just play." />
+    <meta name="theme-color" content="#0a0b0c" />
+    <meta name="color-scheme" content="dark light" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="VOLTARA" />
+    <meta property="og:title" content="VOLTARA — Enter the Game" />
+    <meta property="og:description" content="Instant-play browser games. No account. No waiting. Just play." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="VOLTARA — Enter the Game" />
+    <meta name="twitter:description" content="Instant-play browser games. No account. No waiting. Just play." />
+    <!--voltara:head-->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@500;600;700&display=swap"
+    />
+    <script>
+      // Apply stored theme/motion before first paint to avoid a flash.
+      try {
+        var p = JSON.parse(localStorage.getItem('voltara:prefs') || '{}');
+        if (p.theme) document.documentElement.dataset.theme = p.theme;
+        if (p.motion) document.documentElement.dataset.motion = p.motion;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div style="padding:48px 24px;font-family:system-ui;color:#eef0f2;background:#0a0b0c;min-height:100vh">
+        <h1>VOLTARA</h1>
+        <p>VOLTARA is a browser gaming platform — JavaScript is required to play games.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

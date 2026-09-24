@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Memory Field — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .board { display: grid; gap: clamp(5px, 1.2vmin, 10px); width: var(--size); aspect-ratio: 1; }
+  .card { position: relative; perspective: 600px; border: 0; padding: 0; background: none; }
+  .card .in { position: absolute; inset: 0; transition: transform .32s cubic-bezier(.2,.7,.2,1); transform-style: preserve-3d; }
+  .card.open .in, .card.done .in { transform: rotateY(180deg); }
+  .face { position: absolute; inset: 0; border-radius: 6px; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: grid; place-items: center; border: 1px solid var(--line2); }
+  .back { background: #0f1113 repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,255,255,.025) 6px 7px); }
+  .back::after { content: ''; width: 22%; height: 22%; border: 1px solid #353b42; transform: rotate(45deg); }
+  .front { background: #15181b; transform: rotateY(180deg); }
+  .front svg { width: 58%; height: 58%; }
+  .card.done .front { border-color: rgba(200,255,46,.5); background: rgba(200,255,46,.06); }
+  .card.done { opacity: .7; }
+  .card:focus-visible .back { outline: 2px solid var(--lime); outline-offset: 2px; }
+  .size { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Pairs</b><span id="pairs">0/8</span></div>
+    <div class="vt-stat"><b>Moves</b><span id="moves">0</span></div>
+    <div class="vt-stat"><b>Time</b><span id="time">0:00</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    <button class="vt-btn vt-btn--sm" id="new">New</button>
+  </div>
+  <div class="vt-stage" id="stage">
+    <div class="vt-center"><div class="board" id="board" aria-label="Memory field"></div></div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var board = VT.$('#board'), ov = VT.$('#ov'), stage = VT.$('#stage');
+  var el = { pairs: VT.$('#pairs'), moves: VT.$('#moves'), time: VT.$('#time'), best: VT.$('#best') };
+  var COLORS = ['#c8ff2e', '#8b7dff', '#3ee6ff', '#ffb547'];
+  var NAMES = ['lime', 'violet', 'cyan', 'amber'];
+  var SHAPES = {
+    circle: '<circle cx="50" cy="50" r="34" fill="C"/>',
+    square: '<rect x="18" y="18" width="64" height="64" fill="C"/>',
+    triangle: '<polygon points="50,12 88,84 12,84" fill="C"/>',
+    diamond: '<polygon points="50,8 92,50 50,92 8,50" fill="C"/>',
+    ring: '<circle cx="50" cy="50" r="30" fill="none" stroke="C" stroke-width="12"/>',
+    cross: '<path d="M38 10h24v28h28v24H62v28H38V62H10V38h28z" fill="C"/>',
+    hex: '<polygon points="50,8 88,29 88,71 50,92 12,71 12,29" fill="C"/>',
+    bars: '<rect x="14" y="18" width="16" height="64" fill="C"/><rect x="42" y="18" width="16" height="64" fill="C"/><rect x="70" y="18" width="16" height="64" fill="C"/>',
+    frame: '<rect x="16" y="16" width="68" height="68" fill="none" stroke="C" stroke-width="12"/>',
+  };
+  var KINDS = [];
+  Object.keys(SHAPES).forEach(function (shape) { COLORS.forEach(function (c, ci) { KINDS.push({ shape: shape, color: c, label: NAMES[ci] + ' ' + shape }); }); });
+
+  var size = 4, cards, open, moves, matched, t0, timer, lock;
+
+  function fit() {
+    var r = stage.getBoundingClientRect();
+    board.style.setProperty('--size', Math.floor(Math.min(r.width - 24, r.height - 24, 680)) + 'px');
+  }
+  new ResizeObserver(fit).observe(stage);
+
+  function fmtTime(sec) { return Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0'); }
+  function bestKey() { return 'moves' + size; }
+  function showBest() { var b = VT.getBest(bestKey()); el.best.textContent = b === null ? '–' : b + ' moves'; }
+
+  function deal(n) {
+    size = n;
+    var pairs = (n * n) / 2;
+    var kinds = VT.shuffle(KINDS.slice()).slice(0, pairs);
+    cards = VT.shuffle(kinds.concat(kinds).map(function (k, i) { return { k: k, id: i }; }));
+    open = []; moves = 0; matched = 0; t0 = 0; lock = false;
+    clearInterval(timer);
+    board.innerHTML = '';
+    board.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
+    cards.forEach(function (c, i) {
+      var b = document.createElement('button');
+      b.className = 'card';
+      b.dataset.i = i;
+      b.setAttribute('aria-label', 'Hidden card ' + (i + 1));
+      b.innerHTML = '<div class="in"><div class="face back"></div><div class="face front"><svg viewBox="0 0 100 100" aria-hidden="true">' + SHAPES[c.k.shape].replace(/C/g, c.k.color) + '</svg></div></div>';
+      board.appendChild(b);
+      c.el = b;
+    });
+    hud(); showBest();
+  }
+
+  function hud() {
+    el.pairs.textContent = matched + '/' + cards.length / 2;
+    el.moves.textContent = moves;
+    el.time.textContent = fmtTime(t0 ? (Date.now() - t0) / 1000 : 0);
+  }
+
+  function flip(i) {
+    var c = cards[i];
+    if (lock || c.done || open.indexOf(c) !== -1) return;
+    if (!t0) { t0 = Date.now(); timer = setInterval(hud, 500); }
+    c.el.classList.add('open');
+    c.el.setAttribute('aria-label', c.k.label);
+    open.push(c);
+    VT.beep(640, 0.03, 'triangle', 0.04);
+    if (open.length === 2) {
+      moves++;
+      var a = open[0], b = open[1];
+      if (a.k === b.k) {
+        a.done = b.done = true;
+        a.el.classList.add('done'); b.el.classList.add('done');
+        a.el.setAttribute('aria-label', a.k.label + ', matched'); b.el.setAttribute('aria-label', b.k.label + ', matched');
+        matched++; open = [];
+        VT.beep(880, 0.08, 'triangle', 0.05);
+        if (matched === cards.length / 2) win();
+      } else {
+        lock = true;
+        setTimeout(function () {
+          a.el.classList.remove('open'); b.el.classList.remove('open');
+          a.el.setAttribute('aria-label', 'Hidden card'); b.el.setAttribute('aria-label', 'Hidden card');
+          open = []; lock = false;
+        }, 750);
+      }
+    }
+    hud();
+  }
+
+  function win() {
+    clearInterval(timer);
+    var secs = (Date.now() - t0) / 1000;
+    var r = VT.submit(moves, { key: bestKey(), lowerIsBetter: true });
+    showBest();
+    setTimeout(function () {
+      VT.overlay(ov, {
+        eyebrow: r.isNew && !r.first ? 'New best' : 'Field cleared',
+        title: moves + ' moves',
+        stats: [['Time', fmtTime(secs)], ['Grid', size + '×' + size], ['Best', r.best + ' moves', true]],
+        button: 'Play again', onAction: function () { VT.hide(ov); deal(size); },
+        secondary: { label: size === 4 ? 'Try 6×6' : 'Try 4×4', onAction: function () { VT.hide(ov); deal(size === 4 ? 6 : 4); } },
+      });
+    }, 400);
+  }
+
+  board.addEventListener('click', function (e) { var t = e.target.closest('.card'); if (t) flip(+t.dataset.i); });
+  VT.$('#new').addEventListener('click', menu);
+
+  function menu() {
+    VT.overlay(ov, {
+      eyebrow: 'VOLTARA Original', title: 'Memory Field',
+      sub: 'Flip two cards per move. Match every pair in as few moves as possible. Each symbol has a unique shape.',
+      button: '4×4 · 8 pairs', onAction: function () { VT.hide(ov); deal(4); },
+      secondary: { label: '6×6 · 18 pairs', onAction: function () { VT.hide(ov); deal(6); } },
+      hint: 'Click · Tap · Tab + Enter',
+    });
+  }
+
+  deal(4);
+  menu();
+  VT.ready();
+})();
+</script>
+</body>
+</html>

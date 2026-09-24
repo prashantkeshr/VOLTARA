@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mini Golf — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+<style>
+  .card-table { border-collapse: collapse; font-family: var(--mono); font-size: 12px; margin: 4px 0; }
+  .card-table td, .card-table th { border: 1px solid var(--line2); padding: 5px 8px; text-align: center; }
+  .card-table th { color: var(--dim); font-weight: 500; }
+  .under { color: var(--lime); } .over { color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Hole</b><span id="hole">1/9</span></div>
+    <div class="vt-stat"><b>Par</b><span id="par">2</span></div>
+    <div class="vt-stat"><b>Strokes</b><span id="strokes">0</span></div>
+    <div class="vt-stat"><b>Total</b><span id="total">E</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Best round</b><span id="best">–</span></div>
+  </div>
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Mini golf course. Drag back from anywhere to aim and set power, release to shoot."></canvas>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var W = 1600, H = 1000, BR = 12, CUP = 22, MAXP = 1450, MAXDRAG = 260;
+  var HOLES = [
+    { tee: [300, 500], cup: [1300, 500], par: 2 },
+    { tee: [300, 500], cup: [1300, 500], par: 3, walls: [[760, 240, 80, 520]] },
+    { tee: [250, 800], cup: [1350, 200], par: 3, walls: [[550, 100, 60, 560], [1000, 340, 60, 560]] },
+    { tee: [250, 500], cup: [1350, 500], par: 3, bumpers: [[800, 500, 70], [600, 300, 48], [1000, 700, 48], [600, 700, 48], [1000, 300, 48]] },
+    { tee: [300, 500], cup: [1300, 500], par: 2, sand: [[620, 260, 360, 480]] },
+    { tee: [300, 500], cup: [1320, 500], par: 3, walls: [[700, 100, 60, 420], [1160, 360, 290, 36], [1160, 604, 290, 36], [1414, 360, 36, 280]] },
+    { tee: [250, 200], cup: [1400, 800], par: 4, walls: [[450, 100, 60, 600], [850, 300, 60, 600], [1250, 100, 60, 600]] },
+    { tee: [300, 500], cup: [1360, 500], par: 3, walls: [[780, 100, 40, 330], [780, 570, 40, 330]], bumpers: [[1090, 500, 58]] },
+    { tee: [250, 500], cup: [1360, 500], par: 3, walls: [[480, 290, 620, 36], [480, 674, 620, 36]], sand: [[1150, 100, 110, 290], [1150, 610, 110, 290]], bumpers: [[1205, 500, 40]] },
+  ];
+  var FRAME = [[0, 0, W, 100], [0, 900, W, 100], [0, 0, 100, H], [1500, 0, 100, H]];
+
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { hole: VT.$('#hole'), par: VT.$('#par'), strokes: VT.$('#strokes'), total: VT.$('#total'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { draw(); });
+  var ctx = view.ctx;
+  var hi = 0, ball, strokes, card = [], drag = null, sunk = false, sink = 0;
+
+  function T() { var sc = Math.min(view.w / W, view.h / H); return { sc: sc, ox: (view.w - W * sc) / 2, oy: (view.h - H * sc) / 2 }; }
+  function hole() { return HOLES[hi]; }
+
+  function loadHole(i) {
+    hi = i;
+    var h = hole();
+    ball = { x: h.tee[0], y: h.tee[1], vx: 0, vy: 0, moving: false };
+    strokes = 0; sunk = false; sink = 0; drag = null;
+    hud(); draw();
+  }
+
+  function diffStr(d) { return d === 0 ? 'E' : d > 0 ? '+' + d : String(d); }
+  function hud() {
+    el.hole.textContent = (hi + 1) + '/9';
+    el.par.textContent = hole().par;
+    el.strokes.textContent = strokes;
+    var tot = card.reduce(function (a, c) { return a + c.s - c.p; }, 0);
+    el.total.textContent = diffStr(tot);
+    var b = VT.getBest('round'); el.best.textContent = b === null ? '–' : b + ' strokes';
+  }
+
+  function inRect(x, y, r) { return x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]; }
+
+  function collideRect(r) {
+    var cx = VT.clamp(ball.x, r[0], r[0] + r[2]), cy = VT.clamp(ball.y, r[1], r[1] + r[3]);
+    var dx = ball.x - cx, dy = ball.y - cy, d2 = dx * dx + dy * dy;
+    if (d2 >= BR * BR) return false;
+    var d = Math.sqrt(d2);
+    var nx, ny;
+    if (d === 0) {
+      // Centre inside the rect: push out along the shallowest axis.
+      var l = ball.x - r[0], rr = r[0] + r[2] - ball.x, t = ball.y - r[1], b = r[1] + r[3] - ball.y, m = Math.min(l, rr, t, b);
+      nx = m === l ? -1 : m === rr ? 1 : 0; ny = m === t ? -1 : m === b ? 1 : 0; d = 0;
+      ball.x += nx * (m + BR); ball.y += ny * (m + BR);
+    } else { nx = dx / d; ny = dy / d; ball.x = cx + nx * BR; ball.y = cy + ny * BR; }
+    var vn = ball.vx * nx + ball.vy * ny;
+    if (vn < 0) { ball.vx -= 1.8 * vn * nx; ball.vy -= 1.8 * vn * ny; if (Math.abs(vn) > 120) VT.beep(260, 0.03, 'square', 0.03); }
+    return true;
+  }
+
+  function collideBumper(b) {
+    var dx = ball.x - b[0], dy = ball.y - b[1], d = Math.hypot(dx, dy), min = b[2] + BR;
+    if (d >= min || d === 0) return;
+    var nx = dx / d, ny = dy / d;
+    ball.x = b[0] + nx * min; ball.y = b[1] + ny * min;
+    var vn = ball.vx * nx + ball.vy * ny;
+    if (vn < 0) { ball.vx -= 2.1 * vn * nx; ball.vy -= 2.1 * vn * ny; VT.beep(700, 0.05, 'triangle', 0.05); }
+  }
+
+  var loop = VT.loop(function (dt) {
+    var h = hole();
+    if (sunk) { sink += dt; if (sink > 0.7) { loop.stop(); holeDone(); } return; }
+    var sp = Math.hypot(ball.vx, ball.vy);
+    var steps = Math.max(1, Math.ceil((sp * dt) / 5));
+    for (var i = 0; i < steps; i++) {
+      var sdt = dt / steps;
+      ball.x += ball.vx * sdt; ball.y += ball.vy * sdt;
+      FRAME.concat(h.walls || []).forEach(collideRect);
+      (h.bumpers || []).forEach(collideBumper);
+    }
+    var inSand = (h.sand || []).some(function (r) { return inRect(ball.x, ball.y, r); });
+    sp = Math.hypot(ball.vx, ball.vy);
+    var decel = (inSand ? 900 : 170) * dt, drag2 = Math.exp((inSand ? -2.2 : -0.55) * dt);
+    var nsp = Math.max(0, sp * drag2 - decel);
+    if (sp > 0) { ball.vx *= nsp / sp; ball.vy *= nsp / sp; }
+    var dc = Math.hypot(ball.x - h.cup[0], ball.y - h.cup[1]);
+    if (dc < CUP && nsp < 720) { sunk = true; ball.x = h.cup[0]; ball.y = h.cup[1]; VT.beep(880, 0.08, 'triangle', 0.06); setTimeout(function () { VT.beep(1320, 0.12, 'triangle', 0.06); }, 90); }
+    else if (dc < CUP * 1.6 && nsp < 260) { var pull = 380 * dt; ball.vx += (h.cup[0] - ball.x) / dc * pull; ball.vy += (h.cup[1] - ball.y) / dc * pull; }
+    if (nsp < 6 && !sunk) {
+      ball.vx = ball.vy = 0; ball.moving = false; loop.stop();
+      if (strokes >= 10) { holeDone(); return; }
+    }
+    hud();
+  }, draw);
+
+  function holeDone() {
+    var h = hole();
+    card.push({ s: strokes, p: h.par });
+    hud();
+    var d = strokes - h.par;
+    var label = strokes === 1 ? 'Hole in one' : d <= -2 ? 'Eagle' : d === -1 ? 'Birdie' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : d === 2 ? 'Double bogey' : '+' + d;
+    if (hi === HOLES.length - 1) return finish();
+    VT.overlay(ov, {
+      eyebrow: 'Hole ' + (hi + 1) + ' · Par ' + h.par, title: label,
+      stats: [['Strokes', strokes], ['Round', diffStr(card.reduce(function (a, c) { return a + c.s - c.p; }, 0)), true]],
+      button: 'Hole ' + (hi + 2), onAction: function () { VT.hide(ov); loadHole(hi + 1); }, hint: 'Enter to continue',
+    });
+  }
+
+  function finish() {
+    var total = card.reduce(function (a, c) { return a + c.s; }, 0), par = card.reduce(function (a, c) { return a + c.p; }, 0);
+    var r = VT.submit(total, { key: 'round', lowerIsBetter: true });
+    hud();
+    var rows = '<table class="card-table"><tr><th>Hole</th>' + card.map(function (_, i) { return '<th>' + (i + 1) + '</th>'; }).join('') + '</tr><tr><th>Par</th>' + card.map(function (c) { return '<td>' + c.p + '</td>'; }).join('') + '</tr><tr><th>You</th>' + card.map(function (c) { return '<td class="' + (c.s < c.p ? 'under' : c.s > c.p ? 'over' : '') + '">' + c.s + '</td>'; }).join('') + '</tr></table>';
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best round' : 'Round complete',
+      title: total + ' (' + diffStr(total - par) + ')',
+      sub: rows,
+      stats: [['Best round', r.best, true]],
+      button: 'Play again', onAction: newRound,
+    });
+  }
+
+  function newRound() { VT.hide(ov); card = []; loadHole(0); }
+
+  function toWorld(e) { var t = T(), r = canvas.getBoundingClientRect(); return [(e.clientX - r.left - t.ox) / t.sc, (e.clientY - r.top - t.oy) / t.sc]; }
+
+  canvas.addEventListener('pointerdown', function (e) {
+    if (loop.running || sunk || !ov.hidden) return;
+    var p = toWorld(e);
+    drag = { sx: p[0], sy: p[1], x: p[0], y: p[1] };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', function (e) { if (drag) { var p = toWorld(e); drag.x = p[0]; drag.y = p[1]; draw(); } });
+  canvas.addEventListener('pointerup', function () {
+    if (!drag) return;
+    var dx = drag.sx - drag.x, dy = drag.sy - drag.y, len = Math.hypot(dx, dy);
+    drag = null;
+    if (len < 12) { draw(); return; }
+    var p = Math.min(len, MAXDRAG) / MAXDRAG;
+    ball.vx = dx / len * p * MAXP; ball.vy = dy / len * p * MAXP;
+    strokes++; ball.moving = true;
+    VT.beep(180 + p * 200, 0.04, 'triangle', 0.06);
+    hud(); loop.start();
+  });
+  window.addEventListener('keydown', function (e) {
+    if (!ov.hidden && e.code === 'Enter') { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+  });
+
+  function draw() {
+    if (!ball) return;
+    var t = T(), h = hole();
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, view.w, view.h);
+    ctx.save(); ctx.translate(t.ox, t.oy); ctx.scale(t.sc, t.sc);
+    // Green
+    ctx.fillStyle = '#0f1512'; ctx.fillRect(100, 100, 1400, 800);
+    ctx.strokeStyle = 'rgba(200,255,46,0.05)'; ctx.lineWidth = 1 / t.sc;
+    for (var gx = 100; gx <= 1500; gx += 50) { ctx.beginPath(); ctx.moveTo(gx, 100); ctx.lineTo(gx, 900); ctx.stroke(); }
+    for (var gy = 100; gy <= 900; gy += 50) { ctx.beginPath(); ctx.moveTo(100, gy); ctx.lineTo(1500, gy); ctx.stroke(); }
+    (h.sand || []).forEach(function (r) {
+      ctx.fillStyle = 'rgba(255,181,71,0.14)'; ctx.fillRect(r[0], r[1], r[2], r[3]);
+      ctx.strokeStyle = 'rgba(255,181,71,0.5)'; ctx.setLineDash([10, 8]); ctx.lineWidth = 3; ctx.strokeRect(r[0], r[1], r[2], r[3]); ctx.setLineDash([]);
+    });
+    ctx.strokeStyle = '#353b42'; ctx.lineWidth = 8; ctx.strokeRect(96, 96, 1408, 808);
+    ctx.fillStyle = '#25292e'; ctx.strokeStyle = '#5d656d'; ctx.lineWidth = 3;
+    (h.walls || []).forEach(function (r) { ctx.fillRect(r[0], r[1], r[2], r[3]); ctx.strokeRect(r[0], r[1], r[2], r[3]); });
+    (h.bumpers || []).forEach(function (b) {
+      ctx.beginPath(); ctx.arc(b[0], b[1], b[2], 0, 6.283); ctx.fillStyle = 'rgba(139,125,255,0.18)'; ctx.fill();
+      ctx.strokeStyle = '#8b7dff'; ctx.lineWidth = 4; ctx.stroke();
+    });
+    // Tee + cup
+    ctx.strokeStyle = '#353b42'; ctx.lineWidth = 3; ctx.strokeRect(h.tee[0] - 26, h.tee[1] - 26, 52, 52);
+    ctx.beginPath(); ctx.arc(h.cup[0], h.cup[1], CUP, 0, 6.283); ctx.fillStyle = '#020303'; ctx.fill();
+    ctx.strokeStyle = '#c8ff2e'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(h.cup[0], h.cup[1]); ctx.lineTo(h.cup[0], h.cup[1] - 80); ctx.stroke();
+    ctx.fillStyle = '#c8ff2e'; ctx.beginPath(); ctx.moveTo(h.cup[0], h.cup[1] - 80); ctx.lineTo(h.cup[0] + 36, h.cup[1] - 68); ctx.lineTo(h.cup[0], h.cup[1] - 56); ctx.fill();
+    // Aim guide
+    if (drag) {
+      var dx = drag.sx - drag.x, dy = drag.sy - drag.y, len = Math.hypot(dx, dy);
+      if (len > 12) {
+        var p = Math.min(len, MAXDRAG) / MAXDRAG, ux = dx / len, uy = dy / len;
+        for (var i = 1; i <= 12; i++) {
+          var d = i * 28 * p * 1.6;
+          ctx.globalAlpha = 1 - i / 13;
+          ctx.fillStyle = p > 0.85 ? '#ffb547' : '#eef0f2';
+          ctx.beginPath(); ctx.arc(ball.x + ux * d, ball.y + uy * d, 5, 0, 6.283); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#eef0f2'; ctx.font = '600 28px ' + getComputedStyle(document.body).fontFamily;
+        ctx.fillText(Math.round(p * 100) + '%', ball.x + 24, ball.y - 24);
+      }
+    }
+    // Ball
+    var br = sunk ? BR * Math.max(0, 1 - sink * 1.5) : BR;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, br, 0, 6.283);
+    ctx.fillStyle = '#ffffff'; ctx.shadowColor = 'rgba(255,255,255,.5)'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Mini Golf',
+    sub: 'Nine holes. Drag back from anywhere on the course — the further you pull, the harder the shot. Release to putt. Sand slows the ball; violet bumpers are springy.',
+    button: 'Tee off', onAction: newRound, hint: 'Mouse · Touch',
+  });
+  loadHole(0);
+  VT.ready();
+})();
+</script>
+</body>
+</html>

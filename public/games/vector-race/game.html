@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Vector Race — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Vector Race game area"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+      <div class="vt-stat"><b>Speed</b><span id="speed">0 km/h</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var LANES = 3;
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), speed: VT.$('#speed'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop || !loop.running) draw(); });
+  var ctx = view.ctx;
+  var s = null, loop = null;
+
+  function road() {
+    var rw = Math.min(view.w * 0.92, view.h * 0.62, 520);
+    return { x: (view.w - rw) / 2, w: rw, lane: rw / LANES };
+  }
+  function laneX(l) { var r = road(); return r.x + r.lane * (l + 0.5); }
+  function carSize() { var r = road(); return { w: r.lane * 0.5, h: r.lane * 0.85 }; }
+
+  function reset() {
+    s = { lane: 1, x: laneX(1), speed: 1, dist: 0, score: 0, traffic: [], spawn: 0.6, dash: 0, near: 0, dead: false, flash: 0 };
+  }
+
+  function update(dt) {
+    var cs = carSize(), r = road();
+    s.speed = 1 + s.dist / 2200;
+    var px = s.speed * view.h * 0.9; // pixels per second of road scroll
+    s.dist += dt * px / view.h * 100;
+    s.score += dt * 8 * s.speed;
+    s.dash = (s.dash + px * dt) % 80;
+    s.x += (laneX(s.lane) - s.x) * Math.min(1, dt * 16);
+    if (s.flash > 0) s.flash -= dt;
+
+    s.spawn -= dt;
+    if (s.spawn <= 0) {
+      var busy = s.traffic.filter(function (t) { return t.y < cs.h * 2.2; }).map(function (t) { return t.lane; });
+      var free = [0, 1, 2].filter(function (l) { return busy.indexOf(l) === -1; });
+      // Never block all three lanes at once.
+      if (free.length > 1) {
+        var lane = free[VT.randInt(0, free.length - 1)];
+        s.traffic.push({ lane: lane, y: -cs.h, rel: VT.rand(0.35, 0.7), hue: [190, 280, 30, 330][VT.randInt(0, 3)], passed: false });
+      }
+      s.spawn = Math.max(0.28, 0.95 - s.speed * 0.12) * VT.rand(0.7, 1.3);
+    }
+
+    var py = view.h - cs.h * 1.6;
+    for (var i = s.traffic.length - 1; i >= 0; i--) {
+      var t = s.traffic[i];
+      t.y += px * t.rel * dt;
+      if (t.y > view.h + cs.h) { s.traffic.splice(i, 1); continue; }
+      var tx = laneX(t.lane);
+      if (Math.abs(tx - s.x) < cs.w * 0.9 && Math.abs(t.y - py) < cs.h * 0.9) { crash(); return; }
+      if (!t.passed && t.y > py + cs.h * 0.5) {
+        t.passed = true;
+        if (Math.abs(t.lane - s.lane) === 1 && Math.abs(tx - s.x) < r.lane * 1.25) { s.score += 25; s.near++; s.flash = 0.25; VT.beep(1200, 0.04, 'triangle', 0.04); }
+      }
+    }
+    el.score.textContent = VT.fmt(s.score);
+    el.speed.textContent = Math.round(80 + s.speed * 60) + ' km/h';
+  }
+
+  function drawCar(x, y, w, h, color, glow) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 18; }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + 4, -h / 2); ctx.lineTo(w / 2 - 4, -h / 2); ctx.lineTo(w / 2, -h / 2 + 8);
+    ctx.lineTo(w / 2, h / 2 - 4); ctx.lineTo(w / 2 - 4, h / 2); ctx.lineTo(-w / 2 + 4, h / 2); ctx.lineTo(-w / 2, h / 2 - 4); ctx.lineTo(-w / 2, -h / 2 + 8);
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(7,8,10,.75)';
+    ctx.fillRect(-w / 2 + 5, -h / 2 + h * 0.22, w - 10, h * 0.2);
+    ctx.fillRect(-w / 2 + 5, h / 2 - h * 0.3, w - 10, h * 0.14);
+    ctx.restore();
+  }
+
+  function draw() {
+    var w = view.w, h = view.h, r = road(), cs = carSize();
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, w, h);
+    // Side grid
+    ctx.strokeStyle = 'rgba(62,230,255,0.06)'; ctx.lineWidth = 1;
+    var off = s ? s.dash : 0;
+    for (var gy = -80 + off; gy < h; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(r.x - 12, gy); ctx.moveTo(r.x + r.w + 12, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+    // Road
+    ctx.fillStyle = '#0d0f11'; ctx.fillRect(r.x, 0, r.w, h);
+    ctx.strokeStyle = '#3ee6ff'; ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(62,230,255,.6)'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(r.x, 0); ctx.lineTo(r.x, h); ctx.moveTo(r.x + r.w, 0); ctx.lineTo(r.x + r.w, h); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#353b42'; ctx.setLineDash([28, 52]); ctx.lineDashOffset = -off;
+    for (var l = 1; l < LANES; l++) { ctx.beginPath(); ctx.moveTo(r.x + r.lane * l, 0); ctx.lineTo(r.x + r.lane * l, h); ctx.stroke(); }
+    ctx.setLineDash([]);
+    if (!s) { drawCar(laneX(1), h - cs.h * 1.6, cs.w, cs.h, '#c8ff2e', true); return; }
+    s.traffic.forEach(function (t) { drawCar(laneX(t.lane), t.y, cs.w, cs.h, 'hsl(' + t.hue + ' 70% 60%)', false); });
+    if (!s.dead) drawCar(s.x, h - cs.h * 1.6, cs.w, cs.h, s.flash > 0 ? '#ffffff' : '#c8ff2e', true);
+  }
+
+  loop = VT.loop(update, draw);
+
+  function crash() {
+    s.dead = true; loop.stop(); draw();
+    VT.beep(90, 0.4, 'sawtooth', 0.08);
+    var score = Math.floor(s.score), r = VT.submit(score);
+    showBest();
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Crashed',
+      title: VT.fmt(score),
+      stats: [['Distance', (s.dist / 100).toFixed(1) + ' km'], ['Near misses', s.near], ['Best', VT.fmt(r.best), true]],
+      button: 'Race again', onAction: start, hint: 'Space to restart',
+    });
+  }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+  function start() { VT.hide(ov); reset(); loop.start(); }
+
+  function steer(d) { if (s && !s.dead && loop.running) { var n = VT.clamp(s.lane + d, 0, LANES - 1); if (n !== s.lane) { s.lane = n; VT.beep(420, 0.03, 'triangle', 0.03); } } }
+  window.addEventListener('keydown', function (e) {
+    if (e.repeat) return;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') steer(-1);
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') steer(1);
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+    if (e.code === 'KeyP') pause();
+  });
+  canvas.addEventListener('pointerdown', function (e) {
+    var rct = canvas.getBoundingClientRect();
+    steer(e.clientX - rct.left < rct.width / 2 ? -1 : 1);
+  });
+  var tx0 = null;
+  canvas.addEventListener('touchstart', function (e) { tx0 = e.touches[0].clientX; }, { passive: true });
+
+  function pause() {
+    if (!loop.running) return;
+    loop.stop();
+    VT.overlay(ov, { eyebrow: 'Paused', title: 'Vector Race', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); } });
+  }
+  VT.onPause(pause);
+
+  showBest();
+  draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Vector Race',
+    sub: 'Three lanes. Rising speed. Pass cars in the next lane for near-miss bonuses. One hit ends the run.',
+    button: 'Start race', onAction: start, hint: '← → / A D · Tap left or right',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

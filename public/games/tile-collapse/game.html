@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Tile Collapse — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-hud">
+    <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+    <div class="vt-stat"><b>Tiles left</b><span id="left">0</span></div>
+    <div class="vt-stat"><b>Group</b><span id="group">–</span></div>
+    <div class="vt-spacer"></div>
+    <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    <button class="vt-btn vt-btn--sm" id="new">New</button>
+  </div>
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Tile Collapse board"></canvas>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var COLS = 12, ROWS = 10, TYPES = 4;
+  var PAL = ['#c8ff2e', '#8b7dff', '#3ee6ff', '#ffb547'];
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), left: VT.$('#left'), group: VT.$('#group'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { layout(); draw(); });
+  var ctx = view.ctx;
+  var grid, score, hover = null, geo = { s: 30, ox: 0, oy: 0 }, anim = [];
+
+  function layout() {
+    var s = Math.floor(Math.min((view.w - 24) / COLS, (view.h - 24) / ROWS));
+    geo = { s: s, ox: Math.floor((view.w - s * COLS) / 2), oy: Math.floor((view.h - s * ROWS) / 2) };
+  }
+
+  // grid[c][r], r = 0 is the bottom row.
+  function newGame() {
+    VT.hide(ov);
+    grid = [];
+    for (var c = 0; c < COLS; c++) { grid.push([]); for (var r = 0; r < ROWS; r++) grid[c].push({ t: VT.randInt(0, TYPES - 1), y: r }); }
+    score = 0; hover = null;
+    hud(); draw(); showBest();
+  }
+
+  function cellAt(x, y) {
+    var c = Math.floor((x - geo.ox) / geo.s), rr = Math.floor((y - geo.oy) / geo.s);
+    var r = ROWS - 1 - rr;
+    if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return null;
+    return grid[c] && grid[c][r] ? { c: c, r: r } : null;
+  }
+
+  function group(c, r) {
+    var t = grid[c][r].t, seen = {}, out = [], q = [[c, r]];
+    while (q.length) {
+      var p = q.pop(), k = p[0] + ',' + p[1];
+      if (seen[k]) continue;
+      seen[k] = 1;
+      var col = grid[p[0]];
+      if (!col || !col[p[1]] || col[p[1]].t !== t) continue;
+      out.push(p);
+      q.push([p[0] + 1, p[1]], [p[0] - 1, p[1]], [p[0], p[1] + 1], [p[0], p[1] - 1]);
+    }
+    return out;
+  }
+
+  function hasMoves() {
+    for (var c = 0; c < grid.length; c++) for (var r = 0; r < grid[c].length; r++) {
+      var t = grid[c][r].t;
+      if ((grid[c][r + 1] && grid[c][r + 1].t === t) || (grid[c + 1] && grid[c + 1][r] && grid[c + 1][r].t === t)) return true;
+    }
+    return false;
+  }
+
+  function remaining() { return grid.reduce(function (a, col) { return a + col.length; }, 0); }
+
+  function click(x, y) {
+    if (!ov.hidden) return;
+    var p = cellAt(x, y);
+    if (!p) return;
+    var g = group(p.c, p.r);
+    if (g.length < 2) { VT.beep(160, 0.05, 'square', 0.03); return; }
+    g.forEach(function (q) { grid[q[0]][q[1]] = null; });
+    score += (g.length - 1) * (g.length - 1);
+    VT.beep(300 + Math.min(g.length, 20) * 30, 0.08, 'triangle', 0.05);
+    // Gravity + close empty columns; keep old y for fall animation.
+    for (var c = 0; c < grid.length; c++) grid[c] = grid[c].filter(Boolean);
+    grid = grid.filter(function (col) { return col.length; });
+    hover = null;
+    animate();
+    hud();
+    if (!hasMoves()) setTimeout(end, 350);
+  }
+
+  function animate() {
+    var start = performance.now();
+    (function step(t) {
+      var done = true;
+      grid.forEach(function (col) { col.forEach(function (tile, r) { if (tile.y > r) { tile.y = Math.max(r, tile.y - 0.5); done = false; } else tile.y = r; }); });
+      draw();
+      if (!done && t - start < 800) requestAnimationFrame(step);
+    })(start);
+  }
+
+  function end() {
+    var left = remaining();
+    if (left === 0) score += 1000;
+    var r = VT.submit(score);
+    showBest(); hud();
+    VT.overlay(ov, {
+      eyebrow: left === 0 ? 'Board cleared · +1000' : r.isNew && !r.first ? 'New best' : 'No moves left',
+      title: VT.fmt(score),
+      stats: [['Tiles left', left], ['Best', VT.fmt(r.best), true]],
+      button: 'New board', onAction: newGame,
+    });
+  }
+
+  function hud() {
+    el.score.textContent = VT.fmt(score);
+    el.left.textContent = remaining();
+    el.group.textContent = hover && hover.length > 1 ? hover.length + ' → +' + (hover.length - 1) * (hover.length - 1) : '–';
+  }
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+
+  function shape(t, x, y, s, col) {
+    var m = s * 0.5, c = s / 2;
+    ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, s * 0.09);
+    ctx.beginPath();
+    if (t === 0) { ctx.arc(x + c, y + c, m * 0.62, 0, 6.283); ctx.fill(); }
+    else if (t === 1) { ctx.moveTo(x + c, y + c - m * 0.66); ctx.lineTo(x + c + m * 0.66, y + c + m * 0.5); ctx.lineTo(x + c - m * 0.66, y + c + m * 0.5); ctx.closePath(); ctx.fill(); }
+    else if (t === 2) { ctx.rect(x + c - m * 0.55, y + c - m * 0.55, m * 1.1, m * 1.1); ctx.fill(); }
+    else { ctx.moveTo(x + c, y + c - m * 0.7); ctx.lineTo(x + c + m * 0.7, y + c); ctx.lineTo(x + c, y + c + m * 0.7); ctx.lineTo(x + c - m * 0.7, y + c); ctx.closePath(); ctx.fill(); }
+  }
+
+  function draw() {
+    if (!grid) return;
+    ctx.fillStyle = '#07080a'; ctx.fillRect(0, 0, view.w, view.h);
+    var s = geo.s;
+    ctx.strokeStyle = '#181b1e'; ctx.lineWidth = 1;
+    ctx.strokeRect(geo.ox - 0.5, geo.oy - 0.5, s * COLS + 1, s * ROWS + 1);
+    var hov = {};
+    (hover || []).forEach(function (p) { hov[p[0] + ',' + p[1]] = 1; });
+    grid.forEach(function (col, c) {
+      col.forEach(function (tile, r) {
+        var x = geo.ox + c * s, y = geo.oy + (ROWS - 1 - tile.y) * s;
+        var on = hov[c + ',' + r] && hover.length > 1;
+        ctx.fillStyle = on ? '#1f2327' : '#101214';
+        ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
+        ctx.globalAlpha = on ? 1 : 0.82;
+        shape(tile.t, x, y, s, PAL[tile.t]);
+        ctx.globalAlpha = 1;
+      });
+    });
+  }
+
+  function pt(e) { var r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  canvas.addEventListener('pointermove', function (e) {
+    var p = pt(e), q = cellAt(p[0], p[1]);
+    hover = q ? group(q.c, q.r) : null;
+    hud(); draw();
+  });
+  canvas.addEventListener('pointerleave', function () { hover = null; hud(); draw(); });
+  canvas.addEventListener('click', function (e) { var p = pt(e); click(p[0], p[1]); });
+  VT.$('#new').addEventListener('click', newGame);
+
+  layout();
+  newGame();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Tile Collapse',
+    sub: 'Clear groups of two or more matching tiles. Score = (group − 1)². Bigger groups pay far more. Clear the board for +1000.',
+    button: 'Start', onAction: function () { VT.hide(ov); }, hint: 'Click · Tap',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>

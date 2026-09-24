@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-voltara-game>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Orbit Runner — VOLTARA</title>
+<link rel="stylesheet" href="../_shared/vt.css" />
+</head>
+<body>
+<div class="vt-app">
+  <div class="vt-stage">
+    <canvas class="vt-canvas" id="c" aria-label="Orbit Runner game area"></canvas>
+    <div class="vt-hud vt-hud--float">
+      <div class="vt-stat accent"><b>Score</b><span id="score">0</span></div>
+      <div class="vt-stat"><b>Speed</b><span id="speed">1.0×</span></div>
+      <div class="vt-spacer"></div>
+      <div class="vt-stat"><b>Best</b><span id="best">–</span></div>
+    </div>
+    <div class="vt-overlay" id="ov" hidden></div>
+  </div>
+</div>
+<script src="../_shared/vt.js"></script>
+<script>
+(function () {
+  var canvas = VT.$('#c'), ov = VT.$('#ov');
+  var el = { score: VT.$('#score'), speed: VT.$('#speed'), best: VT.$('#best') };
+  var view = VT.canvas(canvas, function () { if (!loop.running) draw(); });
+  var ctx = view.ctx;
+  var stars = [];
+  for (var i = 0; i < 120; i++) stars.push({ x: Math.random(), y: Math.random(), z: Math.random() * 0.8 + 0.2 });
+
+  var s = null;
+  var pointerX = null;
+
+  function unit() { return Math.min(view.w, view.h * 0.9) / 600; }
+
+  function reset() {
+    s = { t: 0, score: 0, cores: 0, x: view.w / 2, vx: 0, obs: [], spawn: 0, coreSpawn: 3, dead: false, shake: 0, parts: [] };
+  }
+
+  function speedMul() { return 1 + s.t * 0.045; }
+
+  function update(dt) {
+    var u = unit();
+    s.t += dt;
+    var mul = speedMul();
+    s.score += dt * 10 * mul;
+
+    // Movement: keys, or follow the pointer.
+    var dir = 0;
+    if (VT.keys.has('ArrowLeft') || VT.keys.has('KeyA')) dir -= 1;
+    if (VT.keys.has('ArrowRight') || VT.keys.has('KeyD')) dir += 1;
+    var max = 620 * u;
+    if (dir) { s.vx = dir * max; pointerX = null; }
+    else if (pointerX !== null) { s.vx = VT.clamp((pointerX - s.x) * 12, -max * 1.3, max * 1.3); }
+    else s.vx *= 0.8;
+    s.x = VT.clamp(s.x + s.vx * dt, 18 * u, view.w - 18 * u);
+
+    // Spawning
+    s.spawn -= dt;
+    if (s.spawn <= 0) {
+      var size = VT.rand(14, 34) * u * (1 + Math.min(s.t / 90, 0.6));
+      s.obs.push({ x: VT.rand(size, view.w - size), y: -size, r: size, rot: Math.random() * 6, vr: VT.rand(-3, 3), vy: VT.rand(200, 300) * u * mul, core: false });
+      s.spawn = Math.max(0.12, 0.55 - s.t * 0.006) * VT.rand(0.6, 1.2);
+    }
+    s.coreSpawn -= dt;
+    if (s.coreSpawn <= 0) {
+      s.obs.push({ x: VT.rand(30 * u, view.w - 30 * u), y: -20, r: 9 * u, rot: 0, vr: 0, vy: 220 * u * mul, core: true });
+      s.coreSpawn = VT.rand(3, 6);
+    }
+
+    var py = view.h - 70 * u, pr = 13 * u;
+    for (var i = s.obs.length - 1; i >= 0; i--) {
+      var o = s.obs[i];
+      o.y += o.vy * dt;
+      o.rot += o.vr * dt;
+      if (o.y - o.r > view.h) { s.obs.splice(i, 1); continue; }
+      var dx = o.x - s.x, dy = o.y - py;
+      var hitR = o.core ? o.r + pr : o.r * 0.78 + pr * 0.7;
+      if (dx * dx + dy * dy < hitR * hitR) {
+        if (o.core) {
+          s.score += 50; s.cores++; s.obs.splice(i, 1); VT.beep(990, 0.08, 'triangle', 0.06);
+          burst(o.x, o.y, '#c8ff2e', 10);
+        } else { die(); return; }
+      }
+    }
+    for (var j = s.parts.length - 1; j >= 0; j--) {
+      var p = s.parts[j]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life <= 0) s.parts.splice(j, 1);
+    }
+    el.score.textContent = VT.fmt(s.score);
+    el.speed.textContent = mul.toFixed(1) + '×';
+  }
+
+  function burst(x, y, color, n) {
+    for (var i = 0; i < n; i++) { var a = Math.random() * 6.28, v = VT.rand(60, 260); s.parts.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: VT.rand(0.3, 0.7), color: color }); }
+  }
+
+  function draw() {
+    var w = view.w, h = view.h, u = unit();
+    ctx.fillStyle = '#07080a';
+    ctx.fillRect(0, 0, w, h);
+    var mul = s ? speedMul() : 1, t = s ? s.t : 0;
+    // Stars
+    for (var i = 0; i < stars.length; i++) {
+      var st = stars[i];
+      var y = ((st.y * h + t * 60 * st.z * mul * u) % h);
+      ctx.fillStyle = 'rgba(238,240,242,' + (0.15 + st.z * 0.35) + ')';
+      ctx.fillRect(st.x * w, y, st.z * 2, st.z * 2 + (VT.reducedMotion ? 0 : st.z * mul * 2));
+    }
+    // Orbit track
+    ctx.strokeStyle = 'rgba(62,230,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h + h * 0.55, w * 0.9, h * 0.7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#25292e';
+    ctx.beginPath(); ctx.moveTo(0, h - 70 * u + 22 * u); ctx.lineTo(w, h - 70 * u + 22 * u); ctx.stroke();
+    if (!s) return;
+    // Obstacles
+    s.obs.forEach(function (o) {
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      if (o.core) {
+        ctx.fillStyle = '#c8ff2e';
+        ctx.shadowColor = 'rgba(200,255,46,.7)'; ctx.shadowBlur = 14;
+        ctx.beginPath(); ctx.arc(0, 0, o.r, 0, 6.283); ctx.fill();
+      } else {
+        ctx.rotate(o.rot);
+        ctx.strokeStyle = '#8b7dff'; ctx.lineWidth = 2;
+        ctx.fillStyle = 'rgba(139,125,255,0.12)';
+        ctx.beginPath(); ctx.rect(-o.r * 0.8, -o.r * 0.8, o.r * 1.6, o.r * 1.6); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    });
+    s.parts.forEach(function (p) { ctx.globalAlpha = Math.max(0, p.life * 1.6); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3, 3); });
+    ctx.globalAlpha = 1;
+    // Player
+    if (!s.dead) {
+      var py = h - 70 * u;
+      ctx.save();
+      ctx.translate(s.x, py);
+      ctx.rotate(VT.clamp(s.vx / (620 * u), -1, 1) * 0.25);
+      ctx.fillStyle = '#c8ff2e';
+      ctx.shadowColor = 'rgba(200,255,46,.5)'; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.moveTo(0, -18 * u); ctx.lineTo(14 * u, 14 * u); ctx.lineTo(0, 8 * u); ctx.lineTo(-14 * u, 14 * u); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  var loop = VT.loop(update, draw);
+
+  function die() {
+    s.dead = true;
+    burst(s.x, view.h - 70 * unit(), '#c8ff2e', 28);
+    VT.beep(110, 0.35, 'sawtooth', 0.07);
+    loop.stop();
+    // Let particles settle briefly for feedback.
+    var t0 = performance.now();
+    (function fade() {
+      var dt = 1 / 60;
+      s.parts.forEach(function (p) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; });
+      draw();
+      if (performance.now() - t0 < 500) requestAnimationFrame(fade); else end();
+    })();
+  }
+
+  function end() {
+    var score = Math.floor(s.score);
+    var r = VT.submit(score);
+    showBest();
+    VT.overlay(ov, {
+      eyebrow: r.isNew && !r.first ? 'New best' : 'Hull breached',
+      title: VT.fmt(score),
+      stats: [['Time', s.t.toFixed(1) + 's'], ['Cores', s.cores], ['Best', VT.fmt(r.best), true]],
+      button: 'Run again', onAction: start, hint: 'Space to restart',
+    });
+  }
+
+  function showBest() { var b = VT.getBest(); el.best.textContent = b === null ? '–' : VT.fmt(b); }
+
+  function start() { VT.hide(ov); reset(); pointerX = null; loop.start(); canvas.focus(); }
+
+  function setPointer(e) { var r = canvas.getBoundingClientRect(); pointerX = e.clientX - r.left; }
+  canvas.addEventListener('pointerdown', function (e) { setPointer(e); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', function (e) { if (e.pointerType === 'mouse' || e.buttons) setPointer(e); });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' && !ov.hidden) { var b = ov.querySelector('[data-act="main"]'); if (b) { e.preventDefault(); b.click(); } }
+    if (e.code === 'KeyP' && s && !s.dead) pause();
+  });
+
+  function pause() {
+    if (!loop.running) return;
+    loop.stop();
+    VT.overlay(ov, { eyebrow: 'Paused', title: 'Orbit Runner', button: 'Resume', onAction: function () { VT.hide(ov); loop.start(); }, hint: 'Space to resume' });
+  }
+  VT.onPause(pause);
+
+  showBest();
+  draw();
+  VT.overlay(ov, {
+    eyebrow: 'VOLTARA Original', title: 'Orbit Runner',
+    sub: 'Dodge the falling debris. Grab lime cores for +50. The field never slows down.',
+    button: 'Launch', onAction: start, hint: '← → / A D · Mouse · Touch drag',
+  });
+  VT.ready();
+})();
+</script>
+</body>
+</html>
